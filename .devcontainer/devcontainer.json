@@ -1,0 +1,19 @@
+{
+  "name": "slavshik.me",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:22",
+
+  // Node здесь не ради текущего сайта — он статический и сборки не требует.
+  // Он на случай, если страница дорастёт до блога и переедет на Astro:
+  // тогда npm уже под рукой и Codespace не придётся перенастраивать.
+  "forwardPorts": [4321, 8000],
+  "portsAttributes": {
+    "8000": { "label": "static preview" },
+    "4321": { "label": "astro dev" }
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": ["esbenp.prettier-vscode"]
+    }
+  }
+}

@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <title>Alexander Slavschik</title>
+  <meta name="description" content="Software engineer — web and games. Warsaw.">
+  <meta name="author" content="Alexander Slavschik">
+  <link rel="canonical" href="https://slavshik.me/">
+
+  <!-- Превью, когда ссылку кидают в мессенджер или соцсеть -->
+  <meta property="og:type" content="profile">
+  <meta property="og:url" content="https://slavshik.me/">
+  <meta property="og:title" content="Alexander Slavschik">
+  <meta property="og:description" content="Software engineer — web and games. Warsaw.">
+  <meta name="twitter:card" content="summary">
+
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <!-- Цвет адресной строки на мобильных; совпадает с фоном страницы -->
+  <meta name="theme-color" content="#f4f1ec" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#101014" media="(prefers-color-scheme: dark)">
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+
+    :root {
+      /* Нейтраль тёплая, не серая: бумага, а не интерфейс */
+      --paper:  #f4f1ec;
+      --ink:    #16151a;
+      --muted:  #6f6a63;
+      --faint:  #a9a29a;
+      --hair:   #d8d2c8;
+
+      /* Акцент задаётся местным временем посетителя — см. скрипт внизу.
+         Значение по умолчанию = день, оно же работает без JS. */
+      --accent: #2f6b57;
+
+      --serif: 'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif;
+      --mono:  ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --paper: #101014;
+        --ink:   #ece7de;
+        --muted: #8a8378;
+        --faint: #5d574f;
+        --hair:  #2a2830;
+      }
+    }
+
+    body {
+      background: var(--paper);
+      color: var(--ink);
+      font-family: var(--serif);
+      min-height: 100vh;
+      min-height: 100svh;
+      display: flex;
+      align-items: center;
+      -webkit-font-smoothing: antialiased;
+      transition: background-color 1.2s ease, color 1.2s ease;
+    }
+
+    main {
+      width: 100%;
+      max-width: 44rem;
+      margin: 0 auto;
+      padding: 3.5rem 2rem;
+      display: flex;
+      flex-direction: column;
+      gap: 2.5rem;
+    }
+
+    h1 {
+      font-weight: 400;
+      font-size: clamp(2.6rem, 9vw, 5.25rem);
+      line-height: 0.95;
+      letter-spacing: -0.02em;
+      text-wrap: balance;
+      margin: 0;
+    }
+    /* Фамилия уходит в тон: имя читается первым, но целое остаётся одним блоком */
+    h1 .last { color: var(--muted); }
+
+    /* Волосяная линия — единственный декоративный элемент. Её цвет и есть акцент. */
+    .rule {
+      height: 1px;
+      width: 100%;
+      background: linear-gradient(to right, var(--accent), var(--hair) 42%, transparent);
+      transition: background 1.2s ease;
+    }
+
+    .line {
+      font-size: clamp(1.05rem, 2.4vw, 1.3rem);
+      line-height: 1.5;
+      color: var(--muted);
+      max-width: 32ch;
+      text-wrap: pretty;
+      margin: 0;
+    }
+
+    /* Ссылки — полными адресами, без иконок и подписей. Один и тот же ник
+       повторяется столбцом: это факт о человеке, а не придуманный приём. */
+    nav {
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
+      align-items: flex-start;
+      font-family: var(--mono);
+      font-size: clamp(0.8rem, 1.9vw, 0.92rem);
+      letter-spacing: -0.01em;
+    }
+    nav a {
+      color: var(--ink);
+      text-decoration: none;
+      padding-bottom: 2px;
+      position: relative;
+    }
+    nav a .host { color: var(--faint); transition: color 0.35s ease; }
+    nav a:hover .host,
+    nav a:focus-visible .host { color: var(--muted); }
+
+    /* Подчёркивание вырастает от левого края, а не проявляется целиком */
+    nav a::after {
+      content: '';
+      position: absolute;
+      left: 0; bottom: 0;
+      height: 1px; width: 0;
+      background: var(--accent);
+      transition: width 0.35s cubic-bezier(0.2, 0.7, 0.3, 1);
+    }
+    nav a:hover::after,
+    nav a:focus-visible::after { width: 100%; }
+    nav a:focus-visible { outline: none; }
+
+    .mail { margin-top: 0.5rem; }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::after { transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Alexander<br><span class="last">Slavschik</span></h1>
+
+    <div class="rule"></div>
+
+    <p class="line">Software engineer — web and games. Warsaw.</p>
+
+    <nav>
+      <a href="https://github.com/slavshik" rel="me"><span class="host">github.com/</span>slavshik</a>
+      <a href="https://www.linkedin.com/in/slavshik" rel="me"><span class="host">linkedin.com/in/</span>slavshik</a>
+      <a href="https://instagram.com/slavshik" rel="me"><span class="host">instagram.com/</span>slavshik</a>
+      <a class="mail" href="mailto:alex.slavschik@gmail.com">alex.slavschik@gmail.com</a>
+    </nav>
+  </main>
+
+  <script>
+    // Акцент меняется по местному времени посетителя: рассвет, день, закат, ночь.
+    // Единственная «живая» деталь страницы — и она честная: никаких выдуманных
+    // статусов и фейковых данных, только время у того, кто смотрит.
+    // Без JS страница остаётся полностью рабочей с дневным акцентом.
+    (function () {
+      var h = new Date().getHours();
+      var accent =
+        h >= 5  && h < 9  ? '#c2643f' :   // рассвет — терракота
+        h >= 9  && h < 17 ? '#2f6b57' :   // день — глубокий зелёный
+        h >= 17 && h < 21 ? '#b07d2b' :   // закат — охра
+                            '#6f86c9';    // ночь — индиго
+      document.documentElement.style.setProperty('--accent', accent);
+    })();
+  </script>
+</body>
+</html>
