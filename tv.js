@@ -16,19 +16,27 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
-/* ── Габариты в «телевизорных» единицах: высота корпуса = 0.80 ─────────── */
+/* ── Габариты. Пропорции нарочно игрушечные: коробка почти квадратная,
+ *    углы крупно скруглены, детали великоваты. ──────────────────────────── */
 
-const BODY_W = 1.00;
-const BODY_H = 0.80;
-const BODY_D = 0.86;
-const FOOT_H = 0.05;
+const BODY_W = 1.10;
+const BODY_H = 0.88;
+const BODY_D = 0.80;
+const FOOT_H = 0.07;
 
 const HALF_H = BODY_H / 2 + FOOT_H;   // от центра масс до низа ножек
 const HALF_W = BODY_W / 2;
-const TV_VIS_H = BODY_H + FOOT_H + 0.30;  // с антеннами — по этому масштабируем
+const TV_VIS_H = BODY_H + FOOT_H + 0.34;  // с антеннами — по этому масштабируем
 
 const FOV = 30;
 const CAM_DIST = 3.4;
+
+/* Проводок: верле-цепочка, висящая из задней стенки */
+const ROPE_N = 14;                    // точек в цепочке
+const ROPE_SEG = 0.075;               // длина звена
+const ROPE_R = 6;                     // радиальных сегментов трубки
+const ROPE_RAD = 0.018;               // толщина
+const ROPE_Z = -0.34;                 // плоскость, в которой болтается
 
 /* ── Константы физики. Стенд правит их вживую через api.debug.params ───── */
 
@@ -47,9 +55,11 @@ const DEFAULTS = {
   spinLoss:    0.70,
   kickV:       7.5,   // импульс по клику
   wheelV:      0.012, // чувствительность к колесу
-  antK:       90.0,   // жёсткость антенн
-  antC:        6.0,
-  antLever:    0.30,
+  antK:       58.0,   // жёсткость антенн — мягче, чтобы болтались смешнее
+  antC:        3.4,
+  antLever:    0.55,
+  ropeG:      18.0,   // гравитация проводка
+  ropeDamp:    0.988, // сохранение скорости в верле
 };
 
 const FIXED = 1 / 120;
@@ -62,6 +72,10 @@ function cssVar(name, fallback) {
   return v || fallback;
 }
 
+// Цвета корпуса нарочно одни и те же в светлой и тёмной теме: это игрушка,
+// а игрушка не перекрашивается от системной настройки. Под тему подстраивается
+// только свет. Со страницей телевизор связан через --accent — им светится
+// кинескоп, поэтому время суток он всё равно отыгрывает.
 function readPalette(forceDark) {
   const dark = forceDark === null || forceDark === undefined
     ? matchMedia('(prefers-color-scheme: dark)').matches
@@ -70,10 +84,12 @@ function readPalette(forceDark) {
     dark,
     accent: cssVar('--accent', '#2f6b57'),
     paper:  cssVar('--paper', dark ? '#101014' : '#f4f1ec'),
-    shell:  dark ? '#2e2b35' : '#c9bda6',
-    bezel:  dark ? '#1b1a21' : '#9d9179',
-    knob:   dark ? '#565060' : '#7b7264',
-    metal:  dark ? '#837b90' : '#8e857a',
+    shell:  '#e8543a',   // тёплый красно-оранжевый
+    bezel:  '#f6ead3',   // сливочная рамка
+    knob:   '#322f38',   // почти чёрный
+    metal:  '#f2b134',   // жёлтые шарики на антеннах
+    cord:   '#322f38',
+    plug:   '#f6ead3',
   };
 }
 
@@ -116,16 +132,24 @@ const SCREEN_FRAG = /* glsl */`
     n = mix(n, min(n * 1.5, 1.0), band);
 
     // Строчная развёртка
-    float scan = 0.82 + 0.18 * sin(uv.y * 560.0);
+    float scan = 0.84 + 0.16 * sin(uv.y * 560.0);
 
-    // Завал яркости к краям. Виньетка по прямоугольнику, а не по радиусу, и
-    // полоса спада узкая: круглая или размазанная превращает картинку в овал.
+    // Шум идёт до самого края стекла. Виньетка осталась только как намёк на
+    // толщину колбы — на последних процентах ширины, не больше.
     vec2  c   = abs(uv - 0.5) * 2.0;
-    float vig = smoothstep(1.01, 0.88, c.x) * smoothstep(1.01, 0.86, c.y);
+    float vig = smoothstep(1.02, 0.95, c.x) * smoothstep(1.02, 0.94, c.y);
 
+    // Снег белый: акцент уходит в свечение, а не в сам шум.
     vec3 col = vec3(n) * scan * vig;
-    col = mix(col, col * uAccent * 1.7, 0.20);   // люминофор в цвет акцента
-    col += uAccent * 0.025 * vig;                // общее свечение трубки
+    col = mix(col, col * uAccent * 1.6, 0.09);
+    col += uAccent * 0.05 * vig;                 // ореол трубки
+
+    // Блик на стекле. Камера смотрит в лоб, и геометрический купол сам по
+    // себе почти не читается — выпуклость продаёт именно это пятно.
+    // Считается по неискажённым UV, чтобы не ездило вместе со срывом кадра.
+    vec2  hp = (vUv - vec2(0.28, 0.74)) * vec2(1.0, 1.9);
+    float hl = exp(-dot(hp, hp) * 9.0);
+    col += vec3(0.26) * hl;
 
     gl_FragColor = vec4(col * uIntensity, 1.0);
 
@@ -150,13 +174,14 @@ function roundedRect(w, h, r) {
   return s;
 }
 
-// Корпус сужается к затылку — отсюда и берётся «пузатость» силуэта.
+// Корпус сужается к затылку, но заметно меньше, чем у настоящего ЭЛТ:
+// игрушке нужен чанки-силуэт, а не технически верный клин.
 function taperShell(geo) {
   const pos = geo.attributes.position;
   for (let i = 0; i < pos.count; i++) {
     const z = pos.getZ(i);
     const t = THREE.MathUtils.smoothstep(z, -BODY_D * 0.5, BODY_D * 0.34);
-    const k = 0.70 + 0.30 * t;
+    const k = 0.84 + 0.16 * t;
     pos.setX(i, pos.getX(i) * k);
     pos.setY(i, pos.getY(i) * k);
   }
@@ -178,6 +203,128 @@ function bulgeScreen(geo, amount) {
   }
   pos.needsUpdate = true;
   geo.computeVertexNormals();
+}
+
+/* ── Проводок ───────────────────────────────────────────────────────────
+ * Верле-цепочка: позиция и предыдущая позиция, между ними жёсткие связи.
+ * Верле выбран потому, что связь «расстояние между точками постоянно»
+ * решается прямым переносом точек, без матриц и без сил — для верёвки это
+ * и стабильнее пружин, и втрое короче.
+ *
+ * Цепочка плоская (XY на фиксированной глубине): в лобовой проекции разницы
+ * с трёхмерной нет, а стоит она вдвое дешевле.
+ *
+ * Вилка на конце висит в воздухе и никуда не воткнута — в этом вся шутка,
+ * поэтому нижний конец принципиально свободен, ни к чему не привязан.
+ */
+class Rope {
+  constructor(n, seg) {
+    this.n = n;
+    this.seg = seg;
+    this.p = new Float32Array(n * 2);
+    this.q = new Float32Array(n * 2);   // предыдущая позиция
+    for (let i = 0; i < n; i++) {
+      this.p[i * 2] = 0;
+      this.p[i * 2 + 1] = -i * seg;
+      this.q[i * 2] = 0;
+      this.q[i * 2 + 1] = -i * seg;
+    }
+  }
+
+  // Целиком перенести к якорю — при сбросе и первом кадре
+  reset(ax, ay) {
+    for (let i = 0; i < this.n; i++) {
+      this.p[i * 2] = this.q[i * 2] = ax;
+      this.p[i * 2 + 1] = this.q[i * 2 + 1] = ay - i * this.seg;
+    }
+  }
+
+  step(dt, ax, ay, g, damp) {
+    const { p, q, n, seg } = this;
+
+    // Интегрирование: x' = x + (x - x_prev)·damp + a·dt²
+    for (let i = 1; i < n; i++) {
+      const ix = i * 2, iy = ix + 1;
+      const vx = (p[ix] - q[ix]) * damp;
+      const vy = (p[iy] - q[iy]) * damp;
+      q[ix] = p[ix];
+      q[iy] = p[iy];
+      p[ix] += vx;
+      p[iy] += vy - g * dt * dt;
+    }
+    p[0] = ax; p[1] = ay;               // верхняя точка приколочена к корпусу
+
+    // Связи. Восьми проходов хватает, чтобы провод не тянулся заметно.
+    for (let it = 0; it < 8; it++) {
+      for (let i = 0; i < n - 1; i++) {
+        const a = i * 2, b = a + 2;
+        let dx = p[b] - p[a];
+        let dy = p[b + 1] - p[a + 1];
+        const d = Math.hypot(dx, dy) || 1e-6;
+        const k = (d - seg) / d;
+        if (i === 0) {
+          // Верхняя точка приколочена — всю поправку забирает нижняя
+          p[b] -= dx * k;
+          p[b + 1] -= dy * k;
+        } else {
+          dx *= k * 0.5; dy *= k * 0.5;
+          p[a] += dx; p[a + 1] += dy;
+          p[b] -= dx; p[b + 1] -= dy;
+        }
+      }
+    }
+  }
+}
+
+// Трубка вдоль цепочки. Геометрия создаётся один раз, каждый кадр
+// переписываются только позиции и нормали — новых аллокаций нет.
+function makeRopeMesh(mat) {
+  const verts = ROPE_N * ROPE_R;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(verts * 3), 3));
+  geo.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(verts * 3), 3));
+  const idx = [];
+  for (let i = 0; i < ROPE_N - 1; i++) {
+    for (let j = 0; j < ROPE_R; j++) {
+      const a = i * ROPE_R + j;
+      const b = i * ROPE_R + ((j + 1) % ROPE_R);
+      const c = (i + 1) * ROPE_R + j;
+      const d = (i + 1) * ROPE_R + ((j + 1) % ROPE_R);
+      idx.push(a, c, b, b, c, d);
+    }
+  }
+  geo.setIndex(idx);
+  geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 4);
+  return { mesh: new THREE.Mesh(geo, mat), geo };
+}
+
+function updateRopeMesh(geo, rope) {
+  const pos = geo.attributes.position.array;
+  const nrm = geo.attributes.normal.array;
+  const p = rope.p;
+  for (let i = 0; i < ROPE_N; i++) {
+    // Касательная по соседям, нормаль — перпендикуляр в той же плоскости
+    const i0 = Math.max(0, i - 1) * 2;
+    const i1 = Math.min(ROPE_N - 1, i + 1) * 2;
+    let tx = p[i1] - p[i0];
+    let ty = p[i1 + 1] - p[i0 + 1];
+    const tl = Math.hypot(tx, ty) || 1;
+    tx /= tl; ty /= tl;
+    const nx = -ty, ny = tx;            // в плоскости XY
+    const cx = p[i * 2], cy = p[i * 2 + 1];
+    for (let j = 0; j < ROPE_R; j++) {
+      const a = (j / ROPE_R) * Math.PI * 2;
+      const ca = Math.cos(a), sa = Math.sin(a);
+      const ux = nx * ca, uy = ny * ca, uz = sa;   // бинормаль = ось Z
+      const o = (i * ROPE_R + j) * 3;
+      pos[o]     = cx + ux * ROPE_RAD;
+      pos[o + 1] = cy + uy * ROPE_RAD;
+      pos[o + 2] = ROPE_Z + uz * ROPE_RAD;
+      nrm[o] = ux; nrm[o + 1] = uy; nrm[o + 2] = uz;
+    }
+  }
+  geo.attributes.position.needsUpdate = true;
+  geo.attributes.normal.needsUpdate = true;
 }
 
 function shadowTexture() {
@@ -209,38 +356,44 @@ function buildTV(pal) {
     return m;
   };
 
-  const matShell = plastic('shell');
-  const matBezel = plastic('bezel', { roughness: 0.7 });
-  const matKnob  = plastic('knob',  { roughness: 0.35, metalness: 0.45 });
-  const matMetal = plastic('metal', { roughness: 0.3,  metalness: 0.65 });
+  // Матовый пластик без бликов — так игрушка читается силуэтом и цветом,
+  // а не отражениями.
+  const matShell = plastic('shell', { roughness: 0.85 });
+  const matBezel = plastic('bezel', { roughness: 0.9 });
+  const matKnob  = plastic('knob',  { roughness: 0.8 });
+  const matMetal = plastic('metal', { roughness: 0.7 });
+  const matCord  = plastic('cord',  { roughness: 0.85 });
+  const matPlug  = plastic('plug',  { roughness: 0.85 });
 
   // tilt — постоянный разворот на три четверти. Физика крутит только
   // родителя вокруг Z, поэтому проекция экрана остаётся ортогональной и
   // пересчёт «экранные пиксели ↔ мир» остаётся тривиальным.
   const tilt = new THREE.Group();
-  tilt.rotation.set(-0.06, -0.46, 0);
+  tilt.rotation.set(-0.07, -0.54, 0);
 
-  const shellGeo = keep(new RoundedBoxGeometry(BODY_W, BODY_H, BODY_D, 3, 0.075));
+  // Углы скруглены крупно — главный приём игрушечного силуэта
+  const shellGeo = keep(new RoundedBoxGeometry(BODY_W, BODY_H, BODY_D, 4, 0.15));
   taperShell(shellGeo);
   tilt.add(new THREE.Mesh(shellGeo, matShell));
 
   // Рамка сдвинута влево: справа остаётся панель под ручки и динамик.
-  const BX = -0.13;
-  const bezelShape = roundedRect(0.68, 0.60, 0.07);
-  bezelShape.holes.push(roundedRect(0.56, 0.46, 0.05));
+  const BX = -0.15;
+  const bezelShape = roundedRect(0.74, 0.66, 0.13);
+  bezelShape.holes.push(roundedRect(0.60, 0.52, 0.10));
   const bezelGeo = keep(new THREE.ExtrudeGeometry(bezelShape, {
-    depth: 0.06, bevelEnabled: true, bevelSize: 0.008, bevelThickness: 0.008, bevelSegments: 1,
+    depth: 0.07, bevelEnabled: true, bevelSize: 0.012, bevelThickness: 0.012, bevelSegments: 2,
   }));
   const bezel = new THREE.Mesh(bezelGeo, matBezel);
-  // Порядок по глубине: передняя грань корпуса 0.43 → стекло 0.437…0.487 →
-  // рамка 0.432…0.492. Стекло обязано быть впереди корпуса, иначе он его
-  // перекрывает и от картинки остаётся только выпуклая середина.
-  bezel.position.set(BX, 0, 0.432);
+  // Порядок по глубине: передняя грань корпуса 0.40 → стекло от 0.41 →
+  // рамка 0.405…0.475. Стекло обязано начинаться впереди корпуса, иначе он
+  // его перекрывает и от картинки остаётся только выпуклая середина.
+  bezel.position.set(BX, 0, 0.405);
   tilt.add(bezel);
 
   // Экран чуть больше отверстия: край уходит под рамку, стыка не видно.
-  const screenGeo = keep(new THREE.PlaneGeometry(0.58, 0.48, 20, 16));
-  bulgeScreen(screenGeo, 0.05);
+  // Купол сильный и вылезает за рамку — колба выпучена наружу.
+  const screenGeo = keep(new THREE.PlaneGeometry(0.62, 0.54, 24, 20));
+  bulgeScreen(screenGeo, 0.17);
   const screenMat = keep(new THREE.ShaderMaterial({
     vertexShader: SCREEN_VERT,
     fragmentShader: SCREEN_FRAG,
@@ -252,34 +405,34 @@ function buildTV(pal) {
     },
   }));
   const screen = new THREE.Mesh(screenGeo, screenMat);
-  screen.position.set(BX, 0, 0.437);
+  screen.position.set(BX, 0, 0.41);
   screen.scale.y = 0.02;              // розжиг растянет до 1
   tilt.add(screen);
 
   // Свет трубки, падающий на рамку изнутри
-  const glow = new THREE.PointLight(new THREE.Color(pal.accent), 0, 1.2, 2);
-  glow.position.set(BX, 0, 0.60);
+  const glow = new THREE.PointLight(new THREE.Color(pal.accent), 0, 1.4, 2);
+  glow.position.set(BX, 0, 0.62);
   tilt.add(glow);
 
-  // Ручки и верньер на правой панели
-  const knobGeo = keep(new THREE.CylinderGeometry(0.048, 0.052, 0.04, 14));
-  for (const y of [0.19, 0.03]) {
+  // Ручки нарочно большие: мелкие детали в этой стилистике не читаются
+  const knobGeo = keep(new THREE.CylinderGeometry(0.075, 0.082, 0.055, 16));
+  for (const y of [0.21, 0.01]) {
     const k = new THREE.Mesh(knobGeo, matKnob);
     k.rotation.x = Math.PI / 2;
-    k.position.set(0.33, y, 0.44);
+    k.position.set(0.36, y, 0.40);
     tilt.add(k);
   }
-  const dialGeo = keep(new THREE.CylinderGeometry(0.022, 0.022, 0.02, 10));
+  const dialGeo = keep(new THREE.CylinderGeometry(0.032, 0.032, 0.03, 12));
   const dial = new THREE.Mesh(dialGeo, matMetal);
   dial.rotation.x = Math.PI / 2;
-  dial.position.set(0.33, -0.10, 0.45);
+  dial.position.set(0.36, -0.16, 0.41);
   tilt.add(dial);
 
   // Решётка динамика
-  const barGeo = keep(new THREE.BoxGeometry(0.19, 0.011, 0.014));
-  for (let i = 0; i < 5; i++) {
+  const barGeo = keep(new THREE.BoxGeometry(0.20, 0.018, 0.018));
+  for (let i = 0; i < 4; i++) {
     const bar = new THREE.Mesh(barGeo, matBezel);
-    bar.position.set(0.33, -0.19 - i * 0.038, 0.435);
+    bar.position.set(0.36, -0.26 - i * 0.045, 0.40);
     tilt.add(bar);
   }
 
@@ -287,34 +440,54 @@ function buildTV(pal) {
   // Геометрия стержня сдвинута так, что его основание лежит в начале
   // координат — тогда наклон это просто поворот группы, без тригонометрии
   // на позицию (и без шанса ошибиться в знаке).
-  const ROD_L = 0.52;
-  const rodGeo = keep(new THREE.CylinderGeometry(0.005, 0.008, ROD_L, 6));
-  rodGeo.translate(0, ROD_L / 2, 0);
-  const tipGeo = keep(new THREE.SphereGeometry(0.015, 8, 6));
+  //
+  // Разной длины и с разным развалом: симметричная пара выглядит технично,
+  // а несимметричная — глупо, что нам и нужно. Шарики на концах крупные.
   const antennas = [];
-  for (const side of [-1, 1]) {
+  const antSpec = [
+    { side: -1, len: 0.66, splay: 0.52, back: -0.26, ball: 0.055 },
+    { side:  1, len: 0.50, splay: 0.28, back: -0.16, ball: 0.045 },
+  ];
+  for (const spec of antSpec) {
+    const rodGeo = keep(new THREE.CylinderGeometry(0.008, 0.012, spec.len, 6));
+    rodGeo.translate(0, spec.len / 2, 0);
+    const tipGeo = keep(new THREE.SphereGeometry(spec.ball, 10, 8));
     const pivot = new THREE.Group();                 // сюда пишет пружина
-    pivot.position.set(side * 0.17, BODY_H / 2 - 0.02, -0.08);
+    pivot.position.set(spec.side * 0.19, BODY_H / 2 - 0.03, -0.06);
     const arm = new THREE.Group();                   // постоянный развал «ушей»
-    arm.rotation.set(-0.22, 0, side * 0.38);
-    const rod = new THREE.Mesh(rodGeo, matMetal);
+    arm.rotation.set(spec.back, 0, spec.side * spec.splay);
+    const rod = new THREE.Mesh(rodGeo, matKnob);
     const tip = new THREE.Mesh(tipGeo, matMetal);
-    tip.position.y = ROD_L;
+    tip.position.y = spec.len;
     arm.add(rod, tip);
     pivot.add(arm);
     tilt.add(pivot);
-    antennas.push({ pivot, a: 0, av: 0, side });
+    antennas.push({ pivot, a: 0, av: 0, side: spec.side });
   }
 
-  // Ножки
-  const footGeo = keep(new THREE.CylinderGeometry(0.036, 0.028, FOOT_H, 8));
+  // Ножки — коротенькие и толстые
+  const footGeo = keep(new THREE.CylinderGeometry(0.055, 0.048, FOOT_H, 10));
   for (const sx of [-1, 1]) {
     for (const sz of [-1, 1]) {
-      const f = new THREE.Mesh(footGeo, matBezel);
-      f.position.set(sx * 0.38, -BODY_H / 2 - FOOT_H / 2 + 0.008, sz * 0.30);
+      const f = new THREE.Mesh(footGeo, matKnob);
+      f.position.set(sx * 0.40, -BODY_H / 2 - FOOT_H / 2 + 0.01, sz * 0.26);
       tilt.add(f);
     }
   }
+
+  /* Вилка на конце провода. Висит в воздухе и никуда не воткнута — при этом
+     экран работает. Ради этой шутки провод и заведён. */
+  const plug = new THREE.Group();
+  const plugBody = new THREE.Mesh(keep(new RoundedBoxGeometry(0.15, 0.175, 0.095, 2, 0.036)), matPlug);
+  plug.add(plugBody);
+  const prongGeo = keep(new THREE.CylinderGeometry(0.018, 0.018, 0.13, 8));
+  prongGeo.translate(0, -0.065, 0);
+  for (const sx of [-1, 1]) {
+    const prong = new THREE.Mesh(prongGeo, matKnob);
+    prong.position.set(sx * 0.042, -0.086, 0);
+    plug.add(prong);
+  }
+  plug.position.z = ROPE_Z;
 
   // Невидимый прокси под рейкаст: один бокс вместо двадцати мешей
   const proxyGeo = keep(new THREE.BoxGeometry(BODY_W, BODY_H + FOOT_H, BODY_D));
@@ -324,7 +497,15 @@ function buildTV(pal) {
   const body = new THREE.Group();
   body.add(tilt, proxy);
 
-  return { body, tilt, screen, screenMat, glow, antennas, proxy, disposables };
+  // Провод живёт не в body: его точки считаются сразу в координатах rig,
+  // а якорь берётся от корпуса. Иначе пришлось бы гонять их через матрицу
+  // вращающегося родителя туда и обратно каждый кадр.
+  const ropeParts = makeRopeMesh(matCord);
+
+  return {
+    body, tilt, screen, screenMat, glow, antennas, proxy, disposables,
+    ropeMesh: ropeParts.mesh, ropeGeo: ropeParts.geo, plug,
+  };
 }
 
 /* ── Точка входа ───────────────────────────────────────────────────────── */
@@ -357,7 +538,20 @@ export function mount(el, opts = {}) {
   scene.add(rig);
 
   let tv = buildTV(pal);
-  rig.add(tv.body);
+  rig.add(tv.body, tv.ropeMesh, tv.plug);
+
+  const rope = new Rope(ROPE_N, ROPE_SEG);
+  // Якорь в системе корпуса: низ задней стенки. Поворот корпуса его сносит,
+  // поэтому провод раскачивается и когда телевизор просто кренится.
+  const ANCHOR_X = 0.40, ANCHOR_Y = -0.30;
+  const anchor = { x: 0, y: 0 };
+
+  function anchorAt(x, y, th) {
+    const c = Math.cos(th), s = Math.sin(th);
+    anchor.x = x + ANCHOR_X * c - ANCHOR_Y * s;
+    anchor.y = y + ANCHOR_X * s + ANCHOR_Y * c;
+    return anchor;
+  }
 
   const shadowTex = shadowTexture();
   const shadowMat = new THREE.MeshBasicMaterial({
@@ -441,10 +635,13 @@ export function mount(el, opts = {}) {
     if (S.y > ceil) { S.y = ceil; S.vy = -Math.abs(S.vy) * 0.3; }
 
     // Сон: иначе корпус вечно микро-дрожит на полу
+    // Провод входит в условие сна наравне с корпусом: он качается заметно
+    // дольше, и заснуть, пока вилка ещё болтается, было бы видно.
     const still = S.grounded
       && Math.abs(S.vx) < 0.012 && Math.abs(S.vy) < 0.012
       && Math.abs(S.om) < 0.012 && Math.abs(S.th) < 0.01
-      && Math.abs(S.x - homeX) < 0.01;
+      && Math.abs(S.x - homeX) < 0.01
+      && !ropeMoving();
     if (still) {
       S.sleepFor += dt;
       if (S.sleepFor > 0.5) {
@@ -462,8 +659,19 @@ export function mount(el, opts = {}) {
       const acc = -params.antK * ant.a - params.antC * ant.av - al * params.antLever;
       ant.av += acc * dt;
       ant.a  += ant.av * dt;
-      ant.a = THREE.MathUtils.clamp(ant.a, -0.5, 0.5);
+      ant.a = THREE.MathUtils.clamp(ant.a, -0.7, 0.7);
     }
+
+    const a = anchorAt(S.x, S.y, S.th);
+    rope.step(dt, a.x, a.y, params.ropeG, params.ropeDamp);
+  }
+
+  // Провод шевелится сам по себе — значит, физика не спит, даже если корпус
+  // стоит. Проверяем по нижней точке: она успокаивается последней.
+  function ropeMoving() {
+    const i = (ROPE_N - 1) * 2;
+    return Math.abs(rope.p[i] - rope.q[i]) > 0.0006
+        || Math.abs(rope.p[i + 1] - rope.q[i + 1]) > 0.0006;
   }
 
   /* ── Экран: розжиг, срыв кадра, вспышка от удара ────────────────────── */
@@ -708,6 +916,15 @@ export function mount(el, opts = {}) {
     tv.body.rotation.z = prev.th + (S.th - prev.th) * a;
     for (const ant of tv.antennas) ant.pivot.rotation.z = ant.a;
 
+    updateRopeMesh(tv.ropeGeo, rope);
+
+    // Вилка садится на последнюю точку и разворачивается по последнему звену
+    const tail = (ROPE_N - 1) * 2;
+    const dx = rope.p[tail] - rope.p[tail - 2];
+    const dy = rope.p[tail + 1] - rope.p[tail - 1];
+    tv.plug.position.set(rope.p[tail], rope.p[tail + 1], ROPE_Z);
+    tv.plug.rotation.z = Math.atan2(dy, dx) + Math.PI / 2;
+
     // Чем выше корпус, тем шире и бледнее пятно
     const lift = Math.max(0, tv.body.position.y - HALF_H);
     const k = 1 / (1 + lift * 1.1);
@@ -772,6 +989,10 @@ export function mount(el, opts = {}) {
   refreshTheme();
   S.x = homeX;
   prev.x = S.x;
+  {
+    const a = anchorAt(S.x, S.y, S.th);
+    rope.reset(a.x, a.y);
+  }
   start();
 
   /* ── Публичный интерфейс ────────────────────────────────────────────── */
@@ -793,6 +1014,7 @@ export function mount(el, opts = {}) {
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
       for (const d of tv.disposables) d.dispose();
+      tv.ropeGeo.dispose();
       shadow.geometry.dispose();
       shadowMat.dispose();
       shadowTex.dispose();
@@ -815,8 +1037,11 @@ export function mount(el, opts = {}) {
         S.vx = S.vy = S.om = 0;
         prev = { x: S.x, y: S.y, th: S.th };
         power = 0; flashV = 0; roll = 0; rollV = 0;
+        const a = anchorAt(S.x, S.y, S.th);
+        rope.reset(a.x, a.y);
         wake();
       },
+      rope,
       setPaused(v) { paused = !!v; if (!v) { last = 0; acc = 0; } wake(); },
       setForceDark(v) { forceDark = v; refreshTheme(); },
       setWireframe(v) {
