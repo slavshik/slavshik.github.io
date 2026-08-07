@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="robots" content="noindex">
+  <title>Исходник карточки превью — og.png</title>
+
+  <!-- Исходник для /og.png (1200×630). Держится в репозитории, чтобы карточку
+       можно было перегенерировать, а не искать потом, чем она была сделана.
+       Рендер: см. комментарий внизу файла.
+
+       Акцент взят дневной и зашит намертво — по той же логике, что в
+       favicon.svg: картинка статична, время суток ей не передать. -->
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+
+    :root {
+      --paper:  #f4f1ec;
+      --ink:    #16151a;
+      --muted:  #6f6a63;
+      --faint:  #a9a29a;
+      --hair:   #d8d2c8;
+      --accent: #2f6b57;
+
+      /* Стека страницы (Iowan Old Style / Palatino) в рендерящем контейнере
+         нет. Charter — ближайшая книжная антиква из доступных; на машине с
+         Palatino карточка соберётся ещё ближе к оригиналу. */
+      --serif: 'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua',
+               'Bitstream Charter', Charter, Georgia, serif;
+      --mono:  ui-monospace, 'SF Mono', SFMono-Regular, Menlo,
+               'DejaVu Sans Mono', Consolas, monospace;
+    }
+
+    body {
+      width: 1200px;
+      height: 630px;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: var(--serif);
+      -webkit-font-smoothing: antialiased;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 0 92px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    h1 {
+      font-weight: 400;
+      font-size: 118px;
+      line-height: 0.95;
+      letter-spacing: -0.02em;
+      margin: 0;
+    }
+    h1 .last { color: var(--muted); }
+
+    /* На странице линия волосяная, но там она идёт на ~700px. Здесь холст
+       1200px, и в 1px акцент — единственное пятно цвета на карточке —
+       перестаёт читаться вовсе. 2px это тот же вес по масштабу. */
+    .rule {
+      height: 2px;
+      width: 100%;
+      margin: 46px 0 34px;
+      background: linear-gradient(to right, var(--accent), var(--hair) 42%, transparent);
+    }
+
+    .line {
+      font-size: 33px;
+      line-height: 1.45;
+      color: var(--muted);
+      margin: 0;
+    }
+
+    /* Домен — единственный моноширинный элемент, как и ссылки на странице */
+    .domain {
+      position: absolute;
+      right: 92px;
+      bottom: 68px;
+      font-family: var(--mono);
+      font-size: 23px;
+      letter-spacing: -0.01em;
+      color: var(--faint);
+    }
+  </style>
+</head>
+<body>
+  <h1>Alexander<br><span class="last">Slavschik</span></h1>
+
+  <div class="rule"></div>
+
+  <p class="line">Software engineer — web and games. Warsaw.</p>
+
+  <span class="domain">slavshik.me</span>
+
+  <!-- Перегенерировать карточку:
+
+       NODE_PATH=/opt/node22/lib/node_modules node -e "
+       const { chromium } = require('playwright');
+       (async () => {
+         const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
+         const p = await b.newPage({ viewport: { width: 1200, height: 630 } });
+         await p.goto('file://' + process.cwd() + '/lab/og.html');
+         await p.screenshot({ path: 'og.png' });
+         await b.close();
+       })();"
+  -->
+</body>
+</html>
