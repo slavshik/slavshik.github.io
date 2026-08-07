@@ -4,22 +4,69 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
-  <title>Alexander Slavschik</title>
-  <meta name="description" content="Software engineer — web and games. Warsaw.">
+  <!-- Имя плюс род занятий: по одному имени конкуренции почти нет, а роль
+       добавляет запросов, по которым страницу вообще могут искать. -->
+  <title>Alexander Slavschik — Software Engineer, Web &amp; Games</title>
+  <!-- Обе формы написания намеренно: «Slavschik» — имя, «slavshik» — ник,
+       ищут и так, и так. Длина в пределах, которые выдача не обрезает. -->
+  <meta name="description" content="Alexander Slavschik (slavshik) — software engineer working on web and games. Based in Warsaw. Links to GitHub, LinkedIn and contact.">
   <meta name="author" content="Alexander Slavschik">
   <link rel="canonical" href="https://slavshik.me/">
 
-  <!-- Превью, когда ссылку кидают в мессенджер или соцсеть -->
+  <!-- Превью, когда ссылку кидают в мессенджер или соцсеть. Описание тут
+       короткое, не поисковое: на карточке лучше читается строка, а не абзац. -->
   <meta property="og:type" content="profile">
   <meta property="og:url" content="https://slavshik.me/">
-  <meta property="og:title" content="Alexander Slavschik">
+  <meta property="og:site_name" content="Alexander Slavschik">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:title" content="Alexander Slavschik — Software Engineer">
   <meta property="og:description" content="Software engineer — web and games. Warsaw.">
-  <meta name="twitter:card" content="summary">
+  <meta property="og:image" content="https://slavshik.me/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Alexander Slavschik — software engineer, web and games, Warsaw">
+  <meta property="profile:first_name" content="Alexander">
+  <meta property="profile:last_name" content="Slavschik">
+
+  <!-- Продублировано: часть скрейперов не читает og: как фолбэк. Карточка
+       большая, иначе картинка ужмётся в мелкую иконку сбоку. -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Alexander Slavschik — Software Engineer">
+  <meta name="twitter:description" content="Software engineer — web and games. Warsaw.">
+  <meta name="twitter:image" content="https://slavshik.me/og.png">
 
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <!-- Цвет адресной строки на мобильных; совпадает с фоном страницы -->
   <meta name="theme-color" content="#f4f1ec" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#101014" media="(prefers-color-scheme: dark)">
+
+  <!-- Машиночитаемая визитка. Смысл в sameAs: он связывает страницу, GitHub,
+       LinkedIn и Instagram в одну сущность, и по запросу по имени поисковик
+       понимает, что это один человек, а не три однофамильца. Ничего, чего нет
+       на самой странице, тут не заявлено — расхождение разметки с содержимым
+       Google считает нарушением. -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Person",
+    "name": "Alexander Slavschik",
+    "alternateName": "slavshik",
+    "url": "https://slavshik.me/",
+    "image": "https://slavshik.me/og.png",
+    "email": "mailto:slavshik@me.com",
+    "jobTitle": "Software Engineer",
+    "address": {
+      "@type": "PostalAddress",
+      "addressLocality": "Warsaw",
+      "addressCountry": "PL"
+    },
+    "sameAs": [
+      "https://github.com/slavshik",
+      "https://www.linkedin.com/in/slavshik",
+      "https://instagram.com/slavshik"
+    ]
+  }
+  </script>
 
   <!-- Карта модулей для телевизора: three лежит в /vendor, ничего не тянется
        со стороны. Объявлена до любого импорта — иначе браузер её не увидит. -->
