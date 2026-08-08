@@ -706,6 +706,26 @@ export function mount(el, opts = {}) {
   function layout() {
     const w = el.clientWidth || 1;
     const h = el.clientHeight || 1;
+
+    const narrow = w < 680;
+
+    // Стейдж по вертикали привязан к имени, а не к верху окна. main центрируется
+    // по вертикали, а у стейджа высота с потолком — то есть якоря у них разные,
+    // и чем выше окно, тем сильнее они расходятся: на высоком экране телевизор
+    // отрывался от композиции и висел сам по себе, а низ страницы пустовал.
+    //
+    // Насколько стейдж заходит на имя — зависит от ширины, потому что от неё
+    // зависит и высота, на которой телевизор стоит внутри стейджа (см. floorTop).
+    // На широком он справа от текста, и нижняя часть стейджа накрывает имя: там
+    // ножки и провод. На узком телевизор висит прямо над колонкой текста, и
+    // заходить на буквы ему нельзя — стейдж кончается там, где имя начинается.
+    // На стенде /lab/tv.html заголовка нет — там стейдж остаётся у верха окна.
+    const heading = document.querySelector('main h1');
+    if (heading) {
+      const overlap = h * (narrow ? 0.46 : 0.7);
+      el.style.top = Math.max(0, heading.getBoundingClientRect().top + overlap - h) + 'px';
+    }
+
     // Пересчитываем DPR здесь же: переезд окна на другой монитор его меняет
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
     renderer.setSize(w, h, false);
@@ -715,7 +735,6 @@ export function mount(el, opts = {}) {
     const worldH = 2 * Math.tan(THREE.MathUtils.degToRad(FOV / 2)) * CAM_DIST;
     const worldW = worldH * camera.aspect;
 
-    const narrow = w < 680;
     const targetPx = THREE.MathUtils.clamp(h * (narrow ? 0.30 : 0.36), 96, 250);
     const s = (targetPx * (worldH / h)) / TV_VIS_H;
     rig.scale.setScalar(s);
