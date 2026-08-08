@@ -55,6 +55,7 @@ const DEFAULTS = {
   spinLoss:    0.70,
   kickV:       7.5,   // импульс по клику
   wheelV:      0.012, // чувствительность к колесу
+  swipeV:      0.055, // чувствительность к свайпу пальцем по странице
   antK:       58.0,   // жёсткость антенн — мягче, чтобы болтались смешнее
   antC:        3.4,
   antLever:    0.55,
@@ -892,6 +893,73 @@ export function mount(el, opts = {}) {
     wake();
   }
 
+  /* ── Свайп ──────────────────────────────────────────────────────────────
+   * Страница одноэкранная, и на iOS вертикальный жест по ней уходит в
+   * резинку. Подавлять это не хочется: жест штатный, привычный и приятный —
+   * поэтому он не гасится, а используется. Свайп мимо корпуса качает страницу
+   * как обычно и заодно подбрасывает телевизор.
+   *
+   * Слушаем touchmove, а не scroll: страница нескроллируемая, и событие
+   * scroll на резинке в разных версиях Safari приходит по-разному или не
+   * приходит вовсе, а координаты пальца есть всегда. Всё passive и без
+   * preventDefault — ни скролл, ни резинка не трогаются.
+   *
+   * Палец, начавший жест на корпусе, — это перетаскивание, и оно тут не
+   * участвует: свайп смотрит только на жесты мимо телевизора.
+   */
+  const swipe = { x: 0, y: 0, t: 0, id: null, cool: 0 };
+
+  function onTouchStart(e) {
+    if (drag.active) return;
+    const t = e.changedTouches[0];
+    if (!t) return;
+    swipe.id = t.identifier;
+    swipe.x = t.clientX; swipe.y = t.clientY;
+    swipe.t = performance.now();
+  }
+
+  function onTouchMove(e) {
+    if (drag.active || swipe.id === null) return;
+    let t = null;
+    for (const c of e.changedTouches) if (c.identifier === swipe.id) { t = c; break; }
+    if (!t) return;
+
+    const now = performance.now();
+    const dt = Math.max((now - swipe.t) / 1000, 1 / 120);
+    const dx = t.clientX - swipe.x;
+    const dy = t.clientY - swipe.y;
+    swipe.x = t.clientX; swipe.y = t.clientY; swipe.t = now;
+
+    // Скорость жеста в px/с. Порог отсекает медленное ведение пальцем:
+    // подпрыгивать должен именно бросок, а не любое касание.
+    const vy = dy / dt, vx = dx / dt;
+    if (Math.hypot(vx, vy) < 900 || now < swipe.cool) return;
+
+    // Один свайп — один прыжок: без паузы длинный жест сыпал бы импульсами
+    // каждый кадр, и телевизор улетал бы в потолок.
+    swipe.cool = now + 420;
+    swipeImpulse(vx, vy);
+  }
+
+  // Скорость жеста в px/с → импульс. Отдельно от обработчика, потому что то
+  // же самое дёргает стенд кнопкой: жест иначе не проверить без телефона.
+  function swipeImpulse(vx, vy) {
+    // Подбрасывает любой резкий жест, вверх или вниз: подпрыгнуть от тряски
+    // страницы честнее, чем угадывать намерение по знаку. Горизонталь идёт
+    // вбок и в закрутку — та же логика, что у колеса.
+    const k = THREE.MathUtils.clamp(Math.hypot(vx, vy) / 1000, 0, 3.2);
+    const side = THREE.MathUtils.clamp(vx / 1000, -2, 2);
+    S.vy += k * params.swipeV * 34;
+    S.vx += side * params.swipeV * 26;
+    S.om -= side * params.swipeV * 90;
+    flash(0.45);
+    wake();
+  }
+
+  function onTouchEnd(e) {
+    for (const c of e.changedTouches) if (c.identifier === swipe.id) { swipe.id = null; return; }
+  }
+
   function onOrient(e) {
     if (e.gamma === null || e.gamma === undefined) return;
     tiltG = THREE.MathUtils.clamp(e.gamma / 45, -1, 1) * 0.45;
@@ -1027,6 +1095,10 @@ export function mount(el, opts = {}) {
   window.addEventListener('pointerup', onPointerUp, { passive: true });
   window.addEventListener('pointercancel', onPointerUp, { passive: true });
   window.addEventListener('wheel', onWheel, { passive: true });
+  window.addEventListener('touchstart', onTouchStart, { passive: true });
+  window.addEventListener('touchmove', onTouchMove, { passive: true });
+  window.addEventListener('touchend', onTouchEnd, { passive: true });
+  window.addEventListener('touchcancel', onTouchEnd, { passive: true });
   window.addEventListener('deviceorientation', onOrient, { passive: true });
   darkMq.addEventListener('change', onScheme);
 
@@ -1053,6 +1125,10 @@ export function mount(el, opts = {}) {
       window.removeEventListener('pointerup', onPointerUp);
       window.removeEventListener('pointercancel', onPointerUp);
       window.removeEventListener('wheel', onWheel);
+      window.removeEventListener('touchstart', onTouchStart);
+      window.removeEventListener('touchmove', onTouchMove);
+      window.removeEventListener('touchend', onTouchEnd);
+      window.removeEventListener('touchcancel', onTouchEnd);
       window.removeEventListener('deviceorientation', onOrient);
       darkMq.removeEventListener('change', onScheme);
       renderer.domElement.removeEventListener('webglcontextlost', onContextLost);
@@ -1077,6 +1153,7 @@ export function mount(el, opts = {}) {
         wake();
       },
       wheel(delta) { onWheel({ deltaY: delta }); },
+      swipe(vx, vy) { swipeImpulse(vx || 0, vy === undefined ? -1600 : vy); },
       reset() {
         S.x = homeX; S.y = HALF_H; S.th = 0;
         S.vx = S.vy = S.om = 0;

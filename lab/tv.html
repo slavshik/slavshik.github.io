@@ -38,8 +38,8 @@
       min-height: 100svh;
     }
 
-    /* Стейдж повторяет боевой один в один */
-    /* Во весь вьюпорт, как на боевой: стенд обязан показывать то же, что прод */
+    /* Повторяет боевой один в один, во весь вьюпорт: стенд обязан
+       показывать то же, что прод */
     #tv-stage {
       position: fixed;
       inset: 0;
@@ -149,6 +149,8 @@
       <button data-act="kick">Пнуть</button>
       <button data-act="wheelUp">Колесо ↑</button>
       <button data-act="wheelDown">Колесо ↓</button>
+      <button data-act="swipeUp">Свайп ↑</button>
+      <button data-act="swipeSide">Свайп ↗</button>
       <button data-act="reset">Сброс</button>
       <button data-act="pause">Пауза</button>
     </div>
@@ -196,7 +198,8 @@
       gravity: [-60, -4], homeK: [0, 30], homeC: [0, 8],
       uprightK: [0, 80], uprightC: [0, 12], airV: [0, 3], airW: [0, 4],
       rest: [0, 0.9], vRest: [0, 2], friction: [0.3, 1], groundDrag: [0, 12], spinLoss: [0.2, 1],
-      kickV: [1, 16], wheelV: [0, 0.05], antK: [10, 300], antC: [0, 20], antLever: [0, 1.5],
+      kickV: [1, 16], wheelV: [0, 0.05], swipeV: [0, 0.2],
+      antK: [10, 300], antC: [0, 20], antLever: [0, 1.5],
       ropeG: [0, 60], ropeDamp: [0.9, 1],
     };
 
@@ -223,6 +226,8 @@
       kick:      () => D.kick(),
       wheelUp:   () => D.wheel(-160),
       wheelDown: () => D.wheel(160),
+      swipeUp:   () => D.swipe(0, -1800),
+      swipeSide: () => D.swipe(1400, -1200),
       reset:     () => D.reset(),
       pause:     (b) => { paused = !paused; D.setPaused(paused); b.textContent = paused ? 'Пуск' : 'Пауза'; },
     };
