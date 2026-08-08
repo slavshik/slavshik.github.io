@@ -572,7 +572,8 @@ export function mount(el, opts = {}) {
     grounded: true, sleeping: false, sleepFor: 0,
   };
   let prev = { x: S.x, y: S.y, th: S.th };
-  let homeX = 0, floorTop = 0, halfW = 1, halfH = 1;
+  let homeX = 0, halfW = 1, halfH = 1;
+  let lastW = 0, lastH = 0, lastDpr = 0;
   let tiltG = 0;                    // наклон устройства, доля g по горизонтали
 
   // Высота центра масс, при которой коробка, повёрнутая на th, касается пола.
@@ -706,53 +707,72 @@ export function mount(el, opts = {}) {
   function layout() {
     const w = el.clientWidth || 1;
     const h = el.clientHeight || 1;
+    // DPR считаем здесь же: переезд окна на другой монитор его меняет
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.75);
+
+    // ResizeObserver дёргается пачками, а каждый setSize пересоздаёт буфер и
+    // очищает канвас. Трогаем рендерер только когда размер правда изменился.
+    const resized = w !== lastW || h !== lastH || dpr !== lastDpr;
+    if (resized) {
+      renderer.setPixelRatio(dpr);
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      lastW = w; lastH = h; lastDpr = dpr;
+    }
+
+    const worldH = 2 * Math.tan(THREE.MathUtils.degToRad(FOV / 2)) * CAM_DIST;
+    const worldW = worldH * (w / h);
 
     const narrow = w < 680;
 
-    // Стейдж по вертикали привязан к имени, а не к верху окна. main центрируется
-    // по вертикали, а у стейджа высота с потолком — то есть якоря у них разные,
-    // и чем выше окно, тем сильнее они расходятся: на высоком экране телевизор
-    // отрывался от композиции и висел сам по себе, а низ страницы пустовал.
-    //
-    // Насколько стейдж заходит на имя — зависит от ширины, потому что от неё
-    // зависит и высота, на которой телевизор стоит внутри стейджа (см. floorTop).
-    // На широком он справа от текста, и нижняя часть стейджа накрывает имя: там
-    // ножки и провод. На узком телевизор висит прямо над колонкой текста, и
-    // заходить на буквы ему нельзя — стейдж кончается там, где имя начинается.
-    // На стенде /lab/tv.html заголовка нет — там стейдж остаётся у верха окна.
-    const heading = document.querySelector('main h1');
-    if (heading) {
-      const overlap = h * (narrow ? 0.46 : 0.7);
-      el.style.top = Math.max(0, heading.getBoundingClientRect().top + overlap - h) + 'px';
-    }
+    // Канвас во весь вьюпорт, но размер телевизора и его место в кадре
+    // считаются от «сцены» — прямоугольника прежних габаритов у заголовка.
+    // Иначе на высоком окне игрушку раздувало бы заодно с канвасом.
+    const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    const stageH = Math.min(h * 0.58, rem * 28);
 
-    // Пересчитываем DPR здесь же: переезд окна на другой монитор его меняет
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
-    renderer.setSize(w, h, false);
-    camera.aspect = w / h;
-    camera.updateProjectionMatrix();
-
-    const worldH = 2 * Math.tan(THREE.MathUtils.degToRad(FOV / 2)) * CAM_DIST;
-    const worldW = worldH * camera.aspect;
-
-    const targetPx = THREE.MathUtils.clamp(h * (narrow ? 0.30 : 0.36), 96, 250);
+    const targetPx = THREE.MathUtils.clamp(stageH * (narrow ? 0.30 : 0.36), 96, 250);
     const s = (targetPx * (worldH / h)) / TV_VIS_H;
     rig.scale.setScalar(s);
 
+    // halfW от высоты окна не зависит: targetPx считается от stageH, и высота
+    // из формулы сокращается. Поэтому разъезд по горизонтали остался прежним,
+    // а halfH вырос вместе с канвасом — это и есть «летать по всему вьюпорту».
     halfW = worldW / 2 / s;
     halfH = worldH / 2 / s;
 
-    // Пол — ниже середины стейджа, чтобы сверху осталось место на прыжок.
-    // Домашняя позиция уходит вправо: слева стоит колонка текста.
-    // На узком экране места сбоку нет вообще, поэтому телевизор поднимается
-    // над именем целиком — иначе корпус ложится на буквы.
-    floorTop = narrow ? -halfH * 0.02 : -halfH * 0.34;
+    // Пол ставим от заголовка, а не от края окна: main центрируется по
+    // вертикали, и на высоком экране телевизор иначе отрывается от композиции
+    // и висит сам по себе. Коэффициент разный по ширине, потому что от неё
+    // зависит и расположение: на широком телевизор стоит справа от текста и
+    // низу можно заходить на имя — там ножки и провод; на узком он висит прямо
+    // над колонкой, и на буквы заходить не должен.
+    // Заголовок скрыт или его нет (стенд с выключенным текстом) — считаем
+    // от центра сцены, как было раньше.
+    const heading = document.querySelector('h1');
+    const hr = heading && heading.getBoundingClientRect();
+    const floorPx = hr && hr.height > 0
+      ? hr.top + stageH * (narrow ? -0.03 : 0.37)
+      : stageH * 0.5 * (1 + (narrow ? 0.02 : 0.34));
+
+    rig.position.y = (h / 2 - floorPx) * (worldH / h);
+
+    // Домашняя позиция уходит вправо: слева стоит колонка текста
     homeX = narrow
       ? Math.min(halfW * 0.34, halfW - HALF_W * 1.1)
       : Math.min(halfW * 0.42, halfW - HALF_W * 1.15);
 
-    rig.position.y = floorTop * s;
     if (S.sleeping) { S.x = homeX; }
+
+    // Свежий буфер пуст, а спящий цикл рисует через кадр — вот в этот зазор и
+    // проваливалась картинка при перетаскивании окна. Рисуем кадр сразу же и
+    // по актуальному состоянию, чтобы пустого канваса не увидел никто.
+    if (resized) {
+      syncMeshes(1);
+      renderer.render(scene, camera);
+    }
+
     wake();
   }
 
@@ -903,6 +923,34 @@ export function mount(el, opts = {}) {
   let running = false;
   let paused = false;
 
+  // Перенос состояния физики в меши. Вынесено из frame(), потому что то же
+  // самое нужно layout(): он после пересоздания буфера рисует кадр синхронно,
+  // и рисовать этот кадр надо по свежему состоянию, а не по позапрошлому.
+  // a — доля интерполяции между prev и текущим шагом; 1 значит «как есть».
+  function syncMeshes(a) {
+    tv.body.position.x = prev.x + (S.x - prev.x) * a;
+    tv.body.position.y = prev.y + (S.y - prev.y) * a;
+    tv.body.rotation.z = prev.th + (S.th - prev.th) * a;
+    for (const ant of tv.antennas) ant.pivot.rotation.z = ant.a;
+
+    updateRopeMesh(tv.ropeGeo, rope);
+
+    // Вилка садится на последнюю точку и разворачивается по последнему звену
+    const tail = (ROPE_N - 1) * 2;
+    const dx = rope.p[tail] - rope.p[tail - 2];
+    const dy = rope.p[tail + 1] - rope.p[tail - 1];
+    tv.plug.position.set(rope.p[tail], rope.p[tail + 1], ROPE_Z);
+    tv.plug.rotation.z = Math.atan2(dy, dx) + Math.PI / 2;
+
+    // Чем выше корпус, тем шире и бледнее пятно
+    const lift = Math.max(0, tv.body.position.y - HALF_H);
+    const k = 1 / (1 + lift * 1.1);
+    shadow.position.x = tv.body.position.x;
+    shadow.position.y = 0.02;
+    shadow.scale.set(0.85 + (1 - k) * 0.5, 0.20 + (1 - k) * 0.12, 1);
+    shadowMat.opacity = (pal.dark ? 0.30 : 0.42) * k;
+  }
+
   function frame(now) {
     raf = requestAnimationFrame(frame);
     const dtReal = last ? Math.min((now - last) / 1000, 0.25) : 1 / 60;
@@ -929,29 +977,7 @@ export function mount(el, opts = {}) {
 
     if (S.sleeping && !paused && (parity ^= 1)) return;
 
-    const a = S.sleeping ? 1 : acc / FIXED;
-    tv.body.position.x = prev.x + (S.x - prev.x) * a;
-    tv.body.position.y = prev.y + (S.y - prev.y) * a;
-    tv.body.rotation.z = prev.th + (S.th - prev.th) * a;
-    for (const ant of tv.antennas) ant.pivot.rotation.z = ant.a;
-
-    updateRopeMesh(tv.ropeGeo, rope);
-
-    // Вилка садится на последнюю точку и разворачивается по последнему звену
-    const tail = (ROPE_N - 1) * 2;
-    const dx = rope.p[tail] - rope.p[tail - 2];
-    const dy = rope.p[tail + 1] - rope.p[tail - 1];
-    tv.plug.position.set(rope.p[tail], rope.p[tail + 1], ROPE_Z);
-    tv.plug.rotation.z = Math.atan2(dy, dx) + Math.PI / 2;
-
-    // Чем выше корпус, тем шире и бледнее пятно
-    const lift = Math.max(0, tv.body.position.y - HALF_H);
-    const k = 1 / (1 + lift * 1.1);
-    shadow.position.x = tv.body.position.x;
-    shadow.position.y = 0.02;
-    shadow.scale.set(0.85 + (1 - k) * 0.5, 0.20 + (1 - k) * 0.12, 1);
-    shadowMat.opacity = (pal.dark ? 0.30 : 0.42) * k;
-
+    syncMeshes(S.sleeping ? 1 : acc / FIXED);
     updateScreen(dtReal, clock);
     renderer.render(scene, camera);
   }
