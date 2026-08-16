@@ -31,7 +31,11 @@ Static: no build step, no package manager, no lockfile.
   `data-tv="ready"` on `<html>`. The two are orthogonal, so `?aqa=1` alone is
   the page without the TV, deterministically.
 - **`make check` before calling anything done**, and `make test` when a change
-  could plausibly break how the page is served.
+  could plausibly break how the page is served. `make test` includes `make e2e`,
+  which drives a real Chromium and needs Playwright installed globally
+  (`npm i -g playwright && npx playwright install chromium`) — it fails loudly
+  rather than skipping if it isn't there. `make e2e` writes screenshots to
+  `test/shots/` (gitignored); look at them, they are not baselines.
 - **Commit messages are in Russian**, in the imperative mood, no prefixes and
   no trailing period — see `git log`. So is `README.md`. Keep both that way.
 - **Don't add a build step or a dependency manager** without being asked. The

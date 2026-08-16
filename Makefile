@@ -1,12 +1,20 @@
 # Сайт статический, сборки нет. Этот Makefile — не сборка, а набор коротких
 # команд, которые иначе приходится помнить наизусть: сервер, проверки, og.png.
 #
-# Всё держится на том, что уже есть в системе: python3, node, curl. Ставить
-# ничего не надо, кроме playwright для `make og` — он один и требует установки.
+# Почти всё держится на том, что уже есть в системе: python3, node, curl.
+# Отдельно ставится только playwright — им живут `make e2e` и `make og`:
+#   npm i -g playwright && npx playwright install chromium
+# Глобально, а не в репозиторий: package.json и node_modules тут заводить не
+# за чем, а браузер в зависимостях сайта без сборки смотрелся бы дико.
 
 PORT  ?= 8000
 HOST  ?= 127.0.0.1
 URL   := http://localhost:$(PORT)
+
+# Playwright стоит глобально, а не в репозитории: package.json и node_modules
+# тут заводить не за чем. Скрипту проверок он приезжает через NODE_PATH.
+#   npm i -g playwright && npx playwright install chromium
+PW_ROOT := $(shell npm root -g 2>/dev/null)
 
 HTML  := index.html lab/tv.html lab/og.html
 JS    := tv.js $(wildcard vendor/*.js)
@@ -17,7 +25,7 @@ SMOKE_PATHS := / /tv.js /favicon.svg /og.png /robots.txt /sitemap.xml \
                /lab/tv.html /vendor/three.module.min.js /vendor/RoundedBoxGeometry.js
 
 .DEFAULT_GOAL := help
-.PHONY: help serve serve-lan open lab og-lab og check test smoke sitemap
+.PHONY: help serve serve-lan open lab og-lab og check test smoke e2e sitemap
 
 help: ## Показать этот список
 	@grep -hE '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -73,7 +81,20 @@ smoke: ## Поднять сервер и убедиться, что ключев
 	done; \
 	exit $$fail
 
-test: check smoke ## Всё вместе: check + smoke
+e2e: ## Браузерные проверки: телевизор, ключи ?tv=1 и ?aqa=1
+	@[ -d "$(PW_ROOT)/playwright" ] || { \
+	  echo "  нет playwright: npm i -g playwright && npx playwright install chromium"; \
+	  exit 1; }
+	@port=8124; \
+	python3 -m http.server $$port --bind 127.0.0.1 >/dev/null 2>&1 & \
+	pid=$$!; trap "kill $$pid 2>/dev/null" EXIT INT TERM; \
+	for i in $$(seq 30); do \
+	  curl -sf -o /dev/null http://127.0.0.1:$$port/ && break; sleep 0.2; \
+	done; \
+	NODE_PATH="$(PW_ROOT)" BASE="http://127.0.0.1:$$port" node test/e2e.cjs; \
+	code=$$?; kill $$pid 2>/dev/null; exit $$code
+
+test: check smoke e2e ## Всё вместе: check + smoke + e2e
 
 ## ─── обслуживание ────────────────────────────────────────────────────────
 
