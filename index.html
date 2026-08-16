@@ -68,6 +68,15 @@
   }
   </script>
 
+  <!-- Карта модулей для телевизора: three лежит в /vendor, ничего не тянется
+       со стороны. Объявлена до любого импорта — иначе браузер её не увидит. -->
+  <script type="importmap">
+  { "imports": {
+      "three": "/vendor/three.module.min.js",
+      "three/addons/geometries/RoundedBoxGeometry.js": "/vendor/RoundedBoxGeometry.js"
+  } }
+  </script>
+
   <style>
     *, *::before, *::after { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; }
@@ -118,7 +127,25 @@
       display: flex;
       flex-direction: column;
       gap: 2.5rem;
+      /* Текст всегда поверх телевизора */
+      position: relative;
+      z-index: 1;
     }
+
+    /* Сцена телевизора — во весь вьюпорт, чтобы игрушке было где летать:
+       границы, в которые она упирается, это границы канваса. Фиксированная и
+       вне потока: центрирование main не трогает, сдвига вёрстки не даёт вовсе.
+       Где именно внутри канваса стоит телевизор, решает tv.js — он считает
+       место от рамки заголовка, а не от края окна.
+       pointer-events: none — канвас не перехватывает ни клики, ни выделение;
+       попадания по корпусу tv.js считает рейкастом сам. */
+    #tv-stage {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+    }
+    #tv-stage canvas { display: block; width: 100%; height: 100%; }
 
     h1 {
       font-weight: 400;
@@ -127,6 +154,9 @@
       letter-spacing: -0.02em;
       text-wrap: balance;
       margin: 0;
+      /* Подложка в цвет бумаги: если телевизор пролетит за именем, буквы
+         не потеряются. В тёмной теме работает так же — цвет тот же токен. */
+      text-shadow: 0 0 1.4rem var(--paper), 0 0 0.5rem var(--paper);
     }
     /* Фамилия уходит в тон: имя читается первым, но целое остаётся одним блоком */
     h1 .last { color: var(--muted); }
@@ -199,6 +229,8 @@
   </style>
 </head>
 <body>
+  <div id="tv-stage" aria-hidden="true"></div>
+
   <main>
     <h1>Alexander<br><span class="last">Slavschik</span></h1>
 
@@ -239,6 +271,38 @@
         h >= 17 && h < 21 ? '#b07d2b' :   // закат — охра
                             '#6f86c9';    // ночь — индиго
       document.documentElement.style.setProperty('--accent', accent);
+    })();
+
+    // Телевизор — необязательная деталь. Грузится только после того, как
+    // страница отрисована, и только туда, где ему рады. Всё, что он умеет
+    // сломать в худшем случае — это не появиться.
+    (function () {
+      var stage = document.getElementById('tv-stage');
+      if (!stage) return;
+
+      // Просили меньше движения — значит, никакого телевизора. Показывать
+      // вместо него статичную картинку было бы хуже, чем не показывать ничего.
+      if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+      // Экономия трафика и совсем слабые машины — мимо
+      var net = navigator.connection;
+      if (net && (net.saveData || /(^|-)2g$/.test(net.effectiveType || ''))) return;
+      if (navigator.deviceMemory && navigator.deviceMemory < 2) return;
+
+      // WebGL2 проверяем до импорта: не тянуть три четверти мегабайта туда,
+      // где нечем рисовать. С r163 three умеет только WebGL2.
+      try {
+        if (!document.createElement('canvas').getContext('webgl2')) return;
+      } catch (e) { return; }
+
+      var boot = function () {
+        import('/tv.js')
+          .then(function (m) { m.mount(stage); })
+          .catch(function () { /* тихо: страница и без него целая */ });
+      };
+      var idle = window.requestIdleCallback || function (f) { setTimeout(f, 200); };
+      if (document.readyState === 'complete') idle(boot);
+      else addEventListener('load', function () { idle(boot); }, { once: true });
     })();
   </script>
 </body>
