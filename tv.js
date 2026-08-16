@@ -61,10 +61,20 @@ const DEFAULTS = {
   antLever:    0.55,
   ropeG:      18.0,   // гравитация проводка
   ropeDamp:    0.988, // сохранение скорости в верле
+  dropY:       1.6,   // высота падения при загрузке, в высотах телевизора
+  floorGap:    5.0,   // px от ножек до волосяной линии; единственный параметр
+                      // в пикселях — он и меряется от вёрстки, а не от сцены
 };
 
 const FIXED = 1 / 120;
 const MAX_SUB = 5;
+
+// Время, на котором замирает шейдер экрана в неподвижном режиме. Значение
+// само по себе ничего не значит — важно, что оно одно и то же всегда.
+const FROZEN_T = 12.5;
+// Шагов физики на успокоение провода перед снимком. После rope.reset() он
+// собран в точку, и замереть на нём значило бы замереть на комке.
+const FROZEN_SETTLE = 240;
 
 /* ── Тема берётся из CSS-переменных страницы, а не задаётся здесь ──────── */
 
@@ -513,6 +523,9 @@ function buildTV(pal) {
 
 export function mount(el, opts = {}) {
   const params = Object.assign({}, DEFAULTS, opts.params);
+  // Неподвижный режим: один кадр и никакого цикла. Нужен скриншотным тестам,
+  // которым важно, чтобы один и тот же коммит давал одну и ту же картинку.
+  const frozen = !!opts.frozen;
   let forceDark = opts.forceDark === undefined ? null : opts.forceDark;
   let pal = readPalette(forceDark);
 
@@ -753,9 +766,20 @@ export function mount(el, opts = {}) {
     // от центра сцены, как было раньше.
     const heading = document.querySelector('h1');
     const hr = heading && heading.getBoundingClientRect();
-    const floorPx = hr && hr.height > 0
-      ? hr.top + stageH * (narrow ? -0.03 : 0.37)
-      : stageH * 0.5 * (1 + (narrow ? 0.02 : 0.34));
+
+    // На широком пол привязан к волосяной линии под именем: телевизор должен
+    // вставать чуть выше неё. Доля от stageH, которая была тут раньше, ни к
+    // чему в вёрстке не привязана — линия живёт в rem, а stageH в высоте окна,
+    // и до потолка в 28rem они разъезжались.
+    // Узкий не трогаем: там телевизор нарочно висит над заголовком, и пол по
+    // линии поставил бы его на буквы.
+    const ruleEl = document.querySelector('.rule');
+    const rr = ruleEl && ruleEl.getBoundingClientRect();
+    const floorPx = !narrow && rr && rr.width > 0
+      ? rr.top - params.floorGap
+      : (hr && hr.height > 0
+          ? hr.top + stageH * (narrow ? -0.03 : 0.37)
+          : stageH * 0.5 * (1 + (narrow ? 0.02 : 0.34)));
 
     rig.position.y = (h / 2 - floorPx) * (worldH / h);
 
@@ -1051,7 +1075,7 @@ export function mount(el, opts = {}) {
   }
 
   function start() {
-    if (running || !visible || !onScreen) return;
+    if (frozen || running || !visible || !onScreen) return;
     running = true;
     last = 0; acc = 0;
     raf = requestAnimationFrame(frame);
@@ -1105,12 +1129,37 @@ export function mount(el, opts = {}) {
   layout();
   refreshTheme();
   S.x = homeX;
-  prev.x = S.x;
+
+  // Телевизор приезжает падением. Высота задана в его собственных высотах:
+  // размер игрушки считается от stageH, поэтому в высотах корпуса падение
+  // выглядит одинаково и на ноутбуке, и на большом мониторе. Потолок сцены
+  // всё равно уважаем — иначе на низком окне вместо падения будет отскок
+  // от верхнего края.
+  if (!frozen) {
+    S.y = Math.min(HALF_H + params.dropY * TV_VIS_H, halfH - HALF_H * 0.4);
+    S.grounded = false;
+  }
+  prev.x = S.x; prev.y = S.y; prev.th = S.th;
   {
     const a = anchorAt(S.x, S.y, S.th);
     rope.reset(a.x, a.y);
   }
-  start();
+
+  if (frozen) {
+    // Снимок должен совпадать от запуска к запуску: падения нет, случайные
+    // срывы кадра выключены, шум прибит к постоянному времени, экран сразу
+    // разожжён. Провод перед этим успокаиваем фиксированным числом шагов —
+    // в step() случайностей нет, значит результат воспроизводим.
+    nextGlitch = Infinity;
+    for (let i = 0; i < FROZEN_SETTLE; i++) step(FIXED);
+    prev.x = S.x; prev.y = S.y; prev.th = S.th;
+    power = 1;
+    syncMeshes(1);
+    updateScreen(0, FROZEN_T);
+    renderer.render(scene, camera);
+  } else {
+    start();
+  }
 
   /* ── Публичный интерфейс ────────────────────────────────────────────── */
 

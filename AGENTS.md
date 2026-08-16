@@ -23,6 +23,13 @@ Static: no build step, no package manager, no lockfile.
 
 - **Use a server, never `file://`.** `tv.js` is an ES module, and modules do
   not load over `file://`. `make serve` → http://localhost:8000.
+- **The television is off by default.** `?tv=1` turns it on. That gate is
+  temporary — when the TV becomes visible to everyone, the single `if` in the
+  bootstrap goes away and nothing else changes. `?aqa=1` is separate and
+  permanent: it forbids motion for screenshot tests — no drop, pinned shader
+  time, no random glitches, daytime accent, one frame and no rAF loop, then
+  `data-tv="ready"` on `<html>`. The two are orthogonal, so `?aqa=1` alone is
+  the page without the TV, deterministically.
 - **`make check` before calling anything done**, and `make test` when a change
   could plausibly break how the page is served.
 - **Commit messages are in Russian**, in the imperative mood, no prefixes and
