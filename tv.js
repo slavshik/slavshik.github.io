@@ -62,8 +62,10 @@ const DEFAULTS = {
   ropeG:      18.0,   // гравитация проводка
   ropeDamp:    0.988, // сохранение скорости в верле
   dropY:       1.6,   // высота падения при загрузке, в высотах телевизора
-  floorGap:    5.0,   // px от ножек до волосяной линии; единственный параметр
-                      // в пикселях — он и меряется от вёрстки, а не от сцены
+  homeGap:    10.0,   // px между правым бортом корпуса и левым краем имени
+  floorGap:    0.0,   // px, на сколько поднять ножки над низом фамилии;
+                      // единственный параметр в пикселях — он и меряется от
+                      // вёрстки, а не от сцены
 };
 
 const FIXED = 1 / 120;
@@ -669,7 +671,7 @@ export function mount(el, opts = {}) {
     grounded: true, sleeping: false, sleepFor: 0,
   };
   let prev = { x: S.x, y: S.y, th: S.th };
-  let homeX = 0, halfW = 1, halfH = 1;
+  let homeX = 0, halfW = 1, halfH = 1, limX = 1;
   let lastW = 0, lastH = 0, lastDpr = 0;
   let tiltG = 0;                    // наклон устройства, доля g по горизонтали
 
@@ -726,7 +728,7 @@ export function mount(el, opts = {}) {
     }
 
     // Не выпускаем за пределы канваса
-    const lim = Math.max(0.2, halfW - HALF_W * 0.9);
+    const lim = Math.max(0.2, limX);
     if (S.x < -lim) { S.x = -lim; S.vx = Math.abs(S.vx) * 0.4; }
     if (S.x >  lim) { S.x =  lim; S.vx = -Math.abs(S.vx) * 0.4; }
     const ceil = halfH - HALF_H * 0.4;
@@ -850,26 +852,31 @@ export function mount(el, opts = {}) {
     const heading = document.querySelector('h1');
     const hr = heading && heading.getBoundingClientRect();
 
-    // На широком пол привязан к волосяной линии под именем: телевизор должен
-    // вставать чуть выше неё. Доля от stageH, которая была тут раньше, ни к
-    // чему в вёрстке не привязана — линия живёт в rem, а stageH в высоте окна,
-    // и до потолка в 28rem они разъезжались.
-    // Узкий не трогаем: там телевизор нарочно висит над заголовком, и пол по
-    // линии поставил бы его на буквы.
-    const ruleEl = document.querySelector('.rule');
-    const rr = ruleEl && ruleEl.getBoundingClientRect();
-    const floorPx = !narrow && rr && rr.width > 0
-      ? rr.top - params.floorGap
-      : (hr && hr.height > 0
-          ? hr.top + stageH * (narrow ? -0.03 : 0.37)
-          : stageH * 0.5 * (1 + (narrow ? 0.02 : 0.34)));
+    // Пол — по низу фамилии, одинаково на широком и узком. Раньше широкий
+    // считал от волосяной линии, а узкий подвешивал телевизор над заголовком
+    // долей от stageH; и то и другое ни к чему в вёрстке не привязано, а
+    // просили ровно одного: чтобы ножки стояли на нижнем крае второй строки
+    // имени. У h1 line-height 0.95, поэтому низ его бокса и есть этот край.
+    // floorGap приподнимает игрушку над ним — на случай подгонки.
+    const floorPx = hr && hr.height > 0
+      ? hr.bottom - params.floorGap
+      : stageH * 0.5 * (1 + (narrow ? 0.02 : 0.34));
 
     rig.position.y = (h / 2 - floorPx) * (worldH / h);
 
-    // Домашняя позиция уходит вправо: слева стоит колонка текста
-    homeX = narrow
-      ? Math.min(halfW * 0.34, halfW - HALF_W * 1.1)
-      : Math.min(halfW * 0.42, halfW - HALF_W * 1.15);
+    // Телевизор стоит слева от имени: правый борт корпуса — у левого края
+    // заголовка, с зазором homeGap. Считается от вёрстки, а не долей от
+    // halfW: доля не знает, где на самом деле начинается имя.
+    // На узком экране слева места нет вовсе, и игрушка честно уезжает за
+    // край — просили именно так: лучше срез слева, чем телевизор по буквам.
+    const pxToLocal = (worldH / h) / s;
+    const h1Left = hr && hr.width > 0 ? hr.left : w / 2;
+    homeX = (h1Left - w / 2 - params.homeGap) * pxToLocal - HALF_W;
+
+    // Стены не должны спорить с домашней позицией: если дом оказался за краем
+    // канваса, предел раздвигается. Иначе пружина тянет влево, стенка толкает
+    // вправо, и телевизор дрожит на границе, никогда не засыпая.
+    limX = Math.max(halfW - HALF_W * 0.9, Math.abs(homeX) + HALF_W * 0.2);
 
     if (S.sleeping) { S.x = homeX; }
 
