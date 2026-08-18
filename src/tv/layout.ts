@@ -40,7 +40,7 @@ export function createLayout(deps: LayoutDeps): Layout {
 		const w = el.clientWidth || 1;
 		const h = el.clientHeight || 1;
 		// DPR считаем здесь же: переезд окна на другой монитор его меняет
-		const dpr = Math.min(window.devicePixelRatio || 1, 1.75);
+		const dpr = Math.min(window.devicePixelRatio || 1, 2);
 
 		// ResizeObserver дёргается пачками, а каждый setSize пересоздаёт буфер и
 		// очищает канвас. Трогаем рендерер только когда размер правда изменился.
