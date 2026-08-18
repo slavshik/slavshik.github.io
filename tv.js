@@ -491,7 +491,10 @@ function buildTV(pal) {
     const pivot = new THREE.Group();                 // сюда пишет пружина
     pivot.position.set(spec.side * 0.050, ANT_Y, ANT_Z);
     const arm = new THREE.Group();                   // постоянный развал «ушей»
-    arm.rotation.set(spec.back, 0, spec.side * spec.splay);
+    // Знак минус обязателен: поворот вокруг Z уводит верх штыря в -X, и без
+    // него левый рожок валится вправо, правый влево, и они складываются
+    // крестом. Развал должен разводить их в стороны, а не сводить.
+    arm.rotation.set(spec.back, 0, -spec.side * spec.splay);
 
     let y = 0;
     for (let i = 0; i < SEG_R.length; i++) {
