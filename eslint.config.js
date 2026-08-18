@@ -3,7 +3,18 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-	{ ignores: ['dist', 'node_modules', 'test/shots', 'test-results', 'playwright-report'] },
+	// .claude — агентские скиллы: чужой вендоренный код и питонский venv,
+	// к сайту отношения не имеющие.
+	{
+		ignores: [
+			'dist',
+			'node_modules',
+			'test/shots',
+			'test-results',
+			'playwright-report',
+			'.claude',
+		],
+	},
 	js.configs.recommended,
 	tseslint.configs.recommended,
 	{

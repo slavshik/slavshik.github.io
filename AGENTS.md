@@ -80,3 +80,9 @@ The five canonical triage roles, each label string equal to its name. See
 
 Single-context: `CONTEXT.md` and `docs/adr/` at the repo root. See
 `docs/agents/domain.md`.
+
+### 3D renders
+
+`/render` builds parametric build123d models and shows them in a local viewer.
+Vendored in `.claude/skills/render/`, never part of the site. See
+`docs/agents/render.md`.

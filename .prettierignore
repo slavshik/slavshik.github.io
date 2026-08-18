@@ -5,6 +5,7 @@ test-results
 playwright-report
 test/e2e/__screenshots__
 package-lock.json
+.claude
 
 # Разметка написана руками и выровнена руками: комментарии стоят напротив
 # того, что объясняют, а атрибуты разложены так, чтобы голову было видно

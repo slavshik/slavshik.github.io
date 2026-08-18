@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+.DS_Store
+
+# Generated model output (.glb / .step / .stl / scripts)
+viewer/models/*
+!viewer/models/.gitkeep
+# Скрипты — текст и история модели, их держим; .glb/.step/.stl — нет.
+!viewer/models/*.py
+
+.gstack/
+viewer/edits/

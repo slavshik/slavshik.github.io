@@ -14,7 +14,7 @@ PW_IMAGE := mcr.microsoft.com/playwright:v1.62.1-noble
 DOCKER   := docker run --rm -v "$(CURDIR)":/repo -v /repo/node_modules -w /repo
 
 .DEFAULT_GOAL := help
-.PHONY: help install dev preview lab og-lab check test unit e2e e2e-update baselines \
+.PHONY: help install dev preview lab og-lab render check test unit e2e e2e-update baselines \
         size build og sitemap format lint
 
 help: ## Показать этот список
@@ -40,6 +40,13 @@ lab: ## Открыть стенд телевизора со всеми полз�
 
 og-lab: ## Открыть исходник карточки превью
 	@open $(URL)/lab/og.html
+
+render: ## Поднять просмотрщик 3D-моделей скилла /render
+	@bash .claude/skills/render/setup.sh
+	@lsof -i :3123 -t >/dev/null 2>&1 \
+	  || (.claude/skills/render/.venv/bin/python3 \
+	        .claude/skills/render/viewer/serve.py &>/tmp/render-viewer.log &)
+	@sleep 1 && open http://localhost:3123
 
 build: ## Собрать сайт в dist/
 	npm run build
