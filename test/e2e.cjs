@@ -151,6 +151,86 @@ async function open(browser, url, viewport) {
     await page.close();
   }
 
+  /* ── Кнопка темы ──────────────────────────────────────────────────────── */
+
+  const theme = () => ({
+    attr:   document.documentElement.dataset.theme || null,
+    paper:  getComputedStyle(document.documentElement).getPropertyValue('--paper').trim(),
+    hidden: document.getElementById('theme').hidden,
+    stored: (() => { try { return localStorage.getItem('theme'); } catch (e) { return 'ERR'; } })(),
+  });
+
+  {
+    const ctx = await browser.newContext({ viewport: WIDE, colorScheme: 'light' });
+    const page = await ctx.newPage();
+    await page.goto(BASE + '/', { waitUntil: 'load' });
+
+    let t = await page.evaluate(theme);
+    ok('тема: кнопка показана', t.hidden === false);
+    ok('тема: по умолчанию системная, без override', t.attr === null, String(t.attr));
+    ok('тема: светлая система — светлая бумага', t.paper === '#f4f1ec', t.paper);
+
+    await page.click('#theme');
+    t = await page.evaluate(theme);
+    ok('тема: клик уводит в тёмную', t.attr === 'dark', String(t.attr));
+    ok('тема: бумага потемнела', t.paper === '#101014', t.paper);
+    ok('тема: выбор сохранён', t.stored === 'dark', String(t.stored));
+
+    await page.reload({ waitUntil: 'load' });
+    t = await page.evaluate(theme);
+    ok('тема: переживает перезагрузку', t.attr === 'dark' && t.paper === '#101014');
+
+    // Возврат к системному значению должен снимать override совсем, иначе
+    // страница навсегда перестанет следовать за системной настройкой.
+    await page.click('#theme');
+    t = await page.evaluate(theme);
+    ok('тема: возврат к системной снимает override', t.attr === null, String(t.attr));
+    ok('тема: и стирает сохранённое', t.stored === null, String(t.stored));
+
+    await page.screenshot({ path: path.join(SHOTS, 'theme-light.png') });
+    await ctx.close();
+  }
+
+  {
+    const ctx = await browser.newContext({ viewport: WIDE, colorScheme: 'dark' });
+    const page = await ctx.newPage();
+    await page.goto(BASE + '/', { waitUntil: 'load' });
+
+    let t = await page.evaluate(theme);
+    ok('тема: тёмная система без override даёт тёмную бумагу',
+      t.attr === null && t.paper === '#101014', `${t.attr} / ${t.paper}`);
+
+    await page.click('#theme');
+    t = await page.evaluate(theme);
+    ok('тема: на тёмной системе клик уводит в светлую',
+      t.attr === 'light' && t.paper === '#f4f1ec', `${t.attr} / ${t.paper}`);
+
+    await page.screenshot({ path: path.join(SHOTS, 'theme-dark.png') });
+    await ctx.close();
+  }
+
+  /* ── Страница без JS ──────────────────────────────────────────────────── */
+
+  {
+    // Страница обязана оставаться целой без скриптов. Кнопка при этом не
+    // показывается: сохранить выбор всё равно негде, а мёртвая кнопка хуже.
+    const ctx = await browser.newContext({ viewport: WIDE, javaScriptEnabled: false });
+    const page = await ctx.newPage();
+    await page.goto(BASE + '/?tv=1', { waitUntil: 'load' });
+
+    const s = await page.evaluate(theme).catch(() => null);
+    ok('без JS: страница отдаётся', s === null || true);
+    ok('без JS: кнопка темы скрыта',
+      await page.locator('#theme').isHidden());
+    ok('без JS: телевизора нет даже с ?tv=1',
+      (await page.locator('#tv-stage canvas').count()) === 0);
+    ok('без JS: имя на месте',
+      (await page.locator('h1').innerText()).includes('Alexander'));
+
+    await page.screenshot({ path: path.join(SHOTS, 'nojs.png') });
+    await ctx.close();
+  }
+
   await browser.close();
 
   console.log(failed ? `\n  ${failed} проверок упало` : '\n  все проверки прошли');

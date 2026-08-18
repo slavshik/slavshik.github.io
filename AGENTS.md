@@ -41,7 +41,8 @@ Static: no build step, no package manager, no lockfile.
 - **Don't add a build step or a dependency manager** without being asked. The
   absence of both is a deliberate property of this repo, and `README.md`
   explains why.
-- The page must stay fully usable with JavaScript off: no television, daytime
+- The page must stay fully usable with JavaScript off: no television, no theme
+  button (it is `hidden` in the markup and JS reveals it), daytime
   accent colour, everything else intact.
 
 ## Agent skills

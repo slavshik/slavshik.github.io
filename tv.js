@@ -87,9 +87,19 @@ function cssVar(name, fallback) {
 // а игрушка не перекрашивается от системной настройки. Под тему подстраивается
 // только свет. Со страницей телевизор связан через --accent — им светится
 // кинескоп, поэтому время суток он всё равно отыгрывает.
+// Кнопка темы на странице ставит data-theme на <html>. Телевизор про кнопку
+// не знает и знать не должен: он смотрит на атрибут, а системную настройку
+// спрашивает только когда выбора не сделано.
+function pageDark() {
+  const t = document.documentElement.dataset.theme;
+  if (t === 'dark') return true;
+  if (t === 'light') return false;
+  return matchMedia('(prefers-color-scheme: dark)').matches;
+}
+
 function readPalette(forceDark) {
   const dark = forceDark === null || forceDark === undefined
-    ? matchMedia('(prefers-color-scheme: dark)').matches
+    ? pageDark()
     : !!forceDark;
   return {
     dark,
@@ -1177,6 +1187,12 @@ export function mount(el, opts = {}) {
   const darkMq = matchMedia('(prefers-color-scheme: dark)');
   const onScheme = () => refreshTheme();
 
+  // Смена темы кнопкой — это смена атрибута, события от matchMedia при ней
+  // не будет. Поэтому за атрибутом следим отдельно.
+  const themeMo = new MutationObserver(() => refreshTheme());
+  themeMo.observe(document.documentElement,
+    { attributes: true, attributeFilter: ['data-theme'] });
+
   // Потеря контекста — молча исчезаем. Восстанавливать нечего: страница
   // без телевизора и есть штатное состояние.
   const onContextLost = (e) => {
@@ -1253,6 +1269,7 @@ export function mount(el, opts = {}) {
       window.removeEventListener('touchcancel', onTouchEnd);
       window.removeEventListener('deviceorientation', onOrient);
       darkMq.removeEventListener('change', onScheme);
+      themeMo.disconnect();
       renderer.domElement.removeEventListener('webglcontextlost', onContextLost);
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
