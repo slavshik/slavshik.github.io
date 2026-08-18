@@ -200,12 +200,18 @@ function roundedRect(w, h, r) {
 
 // Корпус сужается к затылку, но заметно меньше, чем у настоящего ЭЛТ:
 // игрушке нужен чанки-силуэт, а не технически верный клин.
+// Во сколько раз корпус ужат на данной глубине. Вынесено из taperShell:
+// сужение идёт и по ширине, и по высоте, поэтому дно у затылка заметно выше
+// нуля, и всё, что крепится снизу, обязано это учитывать.
+function taperAt(z) {
+  return 0.84 + 0.16 * THREE.MathUtils.smoothstep(z, -BODY_D * 0.5, BODY_D * 0.34);
+}
+
 function taperShell(geo) {
   const pos = geo.attributes.position;
   for (let i = 0; i < pos.count; i++) {
     const z = pos.getZ(i);
-    const t = THREE.MathUtils.smoothstep(z, -BODY_D * 0.5, BODY_D * 0.34);
-    const k = 0.84 + 0.16 * t;
+    const k = taperAt(z);
     pos.setX(i, pos.getX(i) * k);
     pos.setY(i, pos.getY(i) * k);
   }
@@ -403,14 +409,15 @@ function buildTV(pal) {
   taperShell(shellGeo);
   tilt.add(new THREE.Mesh(shellGeo, matShell));
 
-  // Рамка занимает почти весь фасад: справа осталась только одна ручка, и
-  // панель под неё нужна узкая. Раньше там жили вторая ручка, регулятор и
-  // решётка динамика — от них экран и был вдвое уже, чем мог быть.
-  const BX = -0.11;
-  // Высота прежняя: рамка стоит плитой впереди фасада, и по высоте корпус
-  // уже скруглён — подняв её, углы вылезали за силуэт. Растём только вширь.
-  const bezelShape = roundedRect(0.82, 0.66, 0.13);
-  bezelShape.holes.push(roundedRect(0.68, 0.52, 0.10));
+  // Рамка по центру и во всю ширину фасада: ручек справа больше нет, панель
+  // под них не нужна. До самого края корпуса не доходит нарочно — рамка
+  // стоит плитой на z=0.405, а фасад к краям заворачивается скруглением, и
+  // у самых краёв плита повисла бы в воздухе перед корпусом.
+  // Высота прежняя: сверху и снизу корпус скруглён так же, и рамка повыше
+  // вылезала бы углами за силуэт.
+  const BX = 0;
+  const bezelShape = roundedRect(0.98, 0.66, 0.13);
+  bezelShape.holes.push(roundedRect(0.84, 0.52, 0.10));
   const bezelGeo = keep(new THREE.ExtrudeGeometry(bezelShape, {
     depth: 0.07, bevelEnabled: true, bevelSize: 0.012, bevelThickness: 0.012, bevelSegments: 2,
   }));
@@ -423,7 +430,7 @@ function buildTV(pal) {
 
   // Экран чуть больше отверстия: край уходит под рамку, стыка не видно.
   // Купол сильный и вылезает за рамку — колба выпучена наружу.
-  const screenGeo = keep(new THREE.PlaneGeometry(0.70, 0.54, 24, 20));
+  const screenGeo = keep(new THREE.PlaneGeometry(0.86, 0.54, 28, 20));
   bulgeScreen(screenGeo, 0.17);
   const screenMat = keep(new THREE.ShaderMaterial({
     vertexShader: SCREEN_VERT,
@@ -445,13 +452,6 @@ function buildTV(pal) {
   glow.position.set(BX, 0, 0.62);
   tilt.add(glow);
 
-  // Одна ручка — просто чтобы фасад не был голым. Крупная: мелкие детали в
-  // этой стилистике не читаются.
-  const knobGeo = keep(new THREE.CylinderGeometry(0.062, 0.068, 0.05, 16));
-  const knob = new THREE.Mesh(knobGeo, matKnob);
-  knob.rotation.x = Math.PI / 2;
-  knob.position.set(0.42, 0.02, 0.40);
-  tilt.add(knob);
 
   // Антенны — комнатные «рожки»: приплюснутое блюдце с хромированным винтом
   // по центру, из него два телескопических штыря узким домиком. У каждого
@@ -527,10 +527,16 @@ function buildTV(pal) {
 
   // Ножки — минимальные, только чтобы корпус не лежал на полу брюхом
   const footGeo = keep(new THREE.CylinderGeometry(0.030, 0.026, FOOT_H, 8));
+  // Каждая ножка садится по своей глубине: корпус к затылку ужат, и дно там
+  // выше. По номинальной высоте задняя пара висела в воздухе с зазором в
+  // полножки. По X сужение учитывается тоже, иначе задние уезжают из-под
+  // корпуса наружу.
   for (const sx of [-1, 1]) {
     for (const sz of [-1, 1]) {
+      const z = sz * 0.26;
+      const k = taperAt(z);
       const f = new THREE.Mesh(footGeo, matKnob);
-      f.position.set(sx * 0.40, -BODY_H / 2 - FOOT_H / 2 + 0.01, sz * 0.26);
+      f.position.set(sx * 0.40 * k, -BODY_H / 2 * k - FOOT_H / 2 + 0.012, z);
       tilt.add(f);
     }
   }
