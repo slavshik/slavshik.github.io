@@ -883,7 +883,18 @@ export function mount(el, opts = {}) {
       const tr = range.getBoundingClientRect();
       if (tr.width > 0) textRight = tr.right;
     }
-    homeX = (textRight - w / 2 + params.homeGap) * pxToLocal + HALF_W;
+    // Правый борт — у правого края колонки, там же, где кончается волосяная
+    // линия: справа от имени обычно остаётся место, и прижимать игрушку
+    // вплотную к буквам значит это место выбросить. h1 блочный, поэтому его
+    // бокс и есть колонка.
+    //
+    // Но ближе homeGap к буквам корпус не подходит. Если имя длинное и места
+    // не остаётся, эта граница побеждает, и телевизор уезжает за правый край
+    // экрана — сначала имя и фамилия, телевизор следом и пусть обрезан.
+    const colRight = hr && hr.width > 0 ? hr.right : w / 2;
+    const tvW = (2 * HALF_W) / pxToLocal;
+    const rightPx = Math.max(colRight, textRight + params.homeGap + tvW);
+    homeX = (rightPx - w / 2) * pxToLocal - HALF_W;
 
     // Стены не должны спорить с домашней позицией: если дом оказался за краем
     // канваса, предел раздвигается. Иначе пружина тянет влево, стенка толкает
