@@ -1,9 +1,9 @@
 import { expect, test, type Page } from '@playwright/test';
 
 /*
- * Проверяется то, чего не видно в разметке: что телевизора правда нет, пока
- * его не позвали, что страница цела без JS, и что с ?aqa=1 картинка от
- * запуска к запуску одна и та же.
+ * Проверяется то, чего не видно в разметке: что телевизор приходит сам и
+ * уходит, когда его просят не двигаться, что страница цела без JS, и что с
+ * ?aqa=1 картинка от запуска к запуску одна и та же.
  */
 
 const DAY_ACCENT = '#2f6b57';
@@ -17,11 +17,14 @@ async function settle(page: Page): Promise<void> {
 }
 
 test.describe('страница', () => {
-  test('без ?tv=1 телевизора нет', async ({ page }) => {
+  test('при prefers-reduced-motion телевизора нет вовсе', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto('/?aqa=1');
     await settle(page);
     await page.waitForTimeout(1500); // дольше, чем бутстрап
 
+    // Статичная картинка телевизора была бы хуже, чем его отсутствие,
+    // поэтому модуль даже не скачивается.
     await expect(page.locator('#tv-stage canvas')).toHaveCount(0);
     await expect(page.locator('html')).not.toHaveClass(/tv-on/);
   });
@@ -43,7 +46,7 @@ test.describe('страница', () => {
       if (url.hostname !== '127.0.0.1' && url.protocol !== 'data:') external.push(r.url());
     });
 
-    await page.goto('/?tv=1&aqa=1');
+    await page.goto('/?aqa=1');
     await page.waitForSelector('html[data-tv="ready"]');
 
     expect(external).toEqual([]);
@@ -72,8 +75,8 @@ test.describe('страница', () => {
 });
 
 test.describe('телевизор', () => {
-  test('с ?tv=1 монтируется и докладывает о готовности', async ({ page }) => {
-    await page.goto('/?tv=1&aqa=1');
+  test('приходит сам, без ключей, и докладывает о готовности', async ({ page }) => {
+    await page.goto('/?aqa=1');
     await page.waitForSelector('html[data-tv="ready"]');
 
     await expect(page.locator('#tv-stage canvas')).toHaveCount(1);
@@ -81,7 +84,7 @@ test.describe('телевизор', () => {
   });
 
   test('канвас не перехватывает клики по ссылкам', async ({ page }) => {
-    await page.goto('/?tv=1&aqa=1');
+    await page.goto('/?aqa=1');
     await page.waitForSelector('html[data-tv="ready"]');
 
     const stage = page.locator('#tv-stage');
@@ -90,21 +93,25 @@ test.describe('телевизор', () => {
 });
 
 test.describe('снимки', () => {
+  // Эталон снят ещё до того, как телевизор включили всем, и остаётся верным:
+  // при prefers-reduced-motion страница выглядит ровно так же, как выглядела
+  // без ключа ?tv=1.
   test('страница без телевизора', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto('/?aqa=1');
     await settle(page);
     await expect(page).toHaveScreenshot('page.png', { fullPage: true });
   });
 
   test('страница с телевизором', async ({ page }) => {
-    await page.goto('/?tv=1&aqa=1');
+    await page.goto('/?aqa=1');
     await page.waitForSelector('html[data-tv="ready"]');
     await expect(page).toHaveScreenshot('page-tv.png', { fullPage: true });
   });
 
   test('страница с телевизором в тёмной теме', async ({ page }) => {
     await page.emulateMedia({ colorScheme: 'dark' });
-    await page.goto('/?tv=1&aqa=1');
+    await page.goto('/?aqa=1');
     await page.waitForSelector('html[data-tv="ready"]');
     await expect(page).toHaveScreenshot('page-tv-dark.png', { fullPage: true });
   });

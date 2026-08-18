@@ -37,11 +37,6 @@ commit always produces one image. Exists for screenshot tests. Independent of
 whether the Television is shown at all.
 _Avoid_: test mode, static mode, AQA mode, headless mode
 
-**Television gate**:
-The condition under which the Television is shown at all. Temporary — the
-Television is off for visitors until it is finished.
-_Avoid_: feature flag, toggle
-
 ### The Television
 
 **Television**:

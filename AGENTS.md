@@ -34,13 +34,14 @@ contains only source: `dist/` is never committed.
 
 - **`npm ci`, then `make dev`** → http://localhost:5173. `make help` lists
   everything else.
-- **The television is off by default.** `?tv=1` turns it on. That gate is
-  temporary — when the TV becomes visible to everyone, the single condition in
-  `src/main.ts` goes away and nothing else changes. `?aqa=1` is separate and
-  permanent: it forbids motion for screenshot tests — no drop, pinned shader
-  time, no random glitches, daytime accent, one frame and no rAF loop, then
-  `data-tv="ready"` on `<html>`. The two are orthogonal, so `?aqa=1` alone is
-  the page without the TV, deterministically.
+- **The television is on for everyone.** The `?tv=1` gate is gone; it loads
+  wherever it is welcome, and the conditions that turn it away are all about
+  the visitor, not the URL: `prefers-reduced-motion: reduce`, no WebGL2,
+  `saveData`, under 2 GB of memory. `?aqa=1` is separate and permanent: it
+  forbids motion for screenshot tests — no drop, pinned shader time, no random
+  glitches, daytime accent, one frame and no rAF loop, then `data-tv="ready"`
+  on `<html>`. The page without the television is now reached by emulating
+  reduced motion, which is what the `page.png` baseline does.
 - **`make check` before calling anything done** (types, lint, format), plus
   `make unit` for anything under `src/tv/`. Run `make test` — which adds
   `make e2e` and `make size` — when a change could plausibly move a pixel or

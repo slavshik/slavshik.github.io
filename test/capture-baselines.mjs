@@ -51,10 +51,14 @@ const PROJECTS = {
   mobile: { width: 390, height: 844 },
 };
 
+// ?tv=1 оставлен нарочно: на коммитах, где телевизор ещё был под ключом, без
+// него не снять кадр с телевизором, а там, где он уже включён всем, лишний
+// параметр просто игнорируется. Страницу без телевизора обе эпохи дают
+// одинаково — через prefers-reduced-motion.
 const SHOTS = [
-  { name: 'page.png', url: '/?aqa=1', tv: false, dark: false },
-  { name: 'page-tv.png', url: '/?tv=1&aqa=1', tv: true, dark: false },
-  { name: 'page-tv-dark.png', url: '/?tv=1&aqa=1', tv: true, dark: true },
+  { name: 'page.png', url: '/?aqa=1', tv: false, dark: false, still: true },
+  { name: 'page-tv.png', url: '/?tv=1&aqa=1', tv: true, dark: false, still: false },
+  { name: 'page-tv-dark.png', url: '/?tv=1&aqa=1', tv: true, dark: true, still: false },
 ];
 
 await new Promise((r) => server.listen(PORT, '127.0.0.1', r));
@@ -67,6 +71,7 @@ for (const [project, viewport] of Object.entries(PROJECTS)) {
   for (const shot of SHOTS) {
     const page = await browser.newPage({ viewport, deviceScaleFactor: 1 });
     if (shot.dark) await page.emulateMedia({ colorScheme: 'dark' });
+    if (shot.still) await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto(`http://127.0.0.1:${PORT}${shot.url}`, { waitUntil: 'load' });
     if (shot.tv) {
       await page.waitForSelector('html[data-tv="ready"]');
