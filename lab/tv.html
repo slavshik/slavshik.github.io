@@ -6,15 +6,6 @@
   <meta name="robots" content="noindex">
   <title>Стенд — телевизор</title>
 
-  <!-- Тот же importmap, что на боевой странице: пути абсолютные, поэтому
-       /tv.js работает и отсюда, и из корня. Нужен сервер, не file://. -->
-  <script type="importmap">
-  { "imports": {
-      "three": "/vendor/three.module.min.js",
-      "three/addons/geometries/RoundedBoxGeometry.js": "/vendor/RoundedBoxGeometry.js"
-  } }
-  </script>
-
   <style>
     *, *::before, *::after { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; }
@@ -181,7 +172,8 @@
   <div id="err"></div>
 
   <script type="module">
-    import { mount } from '/tv.js';
+    import { mount } from '/src/tv/index.ts';
+    import { createLabControls } from '/src/tv/lab.ts';
 
     const errBox = document.getElementById('err');
     addEventListener('error', (e) => { errBox.textContent += '\n' + e.message; });
@@ -190,10 +182,11 @@
     const api = mount(stage);
     window.tv = api;                       // для консоли и headless-проверок
 
-    const D = api.debug;
+    const D = createLabControls(api.internals);
 
     /* Ползунки строятся из самого объекта параметров: добавил константу в
-       tv.js — она появилась на стенде, руками ничего дублировать не надо. */
+       src/tv/constants.ts — она появилась на стенде, руками ничего
+       дублировать не надо. */
     const RANGES = {
       gravity: [-60, -4], homeK: [0, 30], homeC: [0, 8],
       uprightK: [0, 80], uprightC: [0, 12], airV: [0, 3], airW: [0, 4],

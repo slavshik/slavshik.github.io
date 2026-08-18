@@ -1,0 +1,11 @@
+/*
+ * Конфиги сборки и тесты: тут Node есть, и DOM тоже — page.evaluate()
+ * исполняется в браузере, а пишется здесь.
+ */
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": ["test", "vite.config.ts", "playwright.config.ts", "eslint.config.js"]
+}
