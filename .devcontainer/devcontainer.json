@@ -1,23 +1,23 @@
 {
-  "name": "slavshik.me",
-  "image": "mcr.microsoft.com/devcontainers/javascript-node:22",
+	"name": "slavshik.me",
+	"image": "mcr.microsoft.com/devcontainers/javascript-node:22",
 
-  // Node теперь нужен самому сайту: сборка на Vite, тесты на Vitest и
-  // Playwright. Версия совпадает с .nvmrc.
-  // Если страница дорастёт до блога, отсюда же поедет Astro — он на том же
-  // Vite; порт под него оставлен заранее, см. docs/adr/0002.
-  "forwardPorts": [5173, 4173, 4321],
-  "portsAttributes": {
-    "5173": { "label": "vite dev" },
-    "4173": { "label": "vite preview" },
-    "4321": { "label": "astro dev (если появится блог)" }
-  },
+	// Node теперь нужен самому сайту: сборка на Vite, тесты на Vitest и
+	// Playwright. Версия совпадает с .nvmrc.
+	// Если страница дорастёт до блога, отсюда же поедет Astro — он на том же
+	// Vite; порт под него оставлен заранее, см. docs/adr/0002.
+	"forwardPorts": [5173, 4173, 4321],
+	"portsAttributes": {
+		"5173": { "label": "vite dev" },
+		"4173": { "label": "vite preview" },
+		"4321": { "label": "astro dev (если появится блог)" }
+	},
 
-  "postCreateCommand": "npm ci",
+	"postCreateCommand": "npm ci",
 
-  "customizations": {
-    "vscode": {
-      "extensions": ["esbenp.prettier-vscode", "dbaeumer.vscode-eslint"]
-    }
-  }
+	"customizations": {
+		"vscode": {
+			"extensions": ["esbenp.prettier-vscode", "dbaeumer.vscode-eslint"]
+		}
+	}
 }

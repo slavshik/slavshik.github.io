@@ -3,9 +3,9 @@
  * исполняется в браузере, а пишется здесь.
  */
 {
-  "extends": "./tsconfig.json",
-  "compilerOptions": {
-    "types": ["node"]
-  },
-  "include": ["test", "vite.config.ts", "playwright.config.ts", "eslint.config.js"]
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"types": ["node"]
+	},
+	"include": ["test", "vite.config.ts", "playwright.config.ts", "eslint.config.js"]
 }
