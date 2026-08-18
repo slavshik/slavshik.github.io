@@ -22,7 +22,7 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 const BODY_W = 1.10;
 const BODY_H = 0.88;
 const BODY_D = 0.80;
-const FOOT_H = 0.07;
+const FOOT_H = 0.045;
 
 const HALF_H = BODY_H / 2 + FOOT_H;   // от центра масс до низа ножек
 const HALF_W = BODY_W / 2;
@@ -403,10 +403,14 @@ function buildTV(pal) {
   taperShell(shellGeo);
   tilt.add(new THREE.Mesh(shellGeo, matShell));
 
-  // Рамка сдвинута влево: справа остаётся панель под ручки и динамик.
-  const BX = -0.15;
-  const bezelShape = roundedRect(0.74, 0.66, 0.13);
-  bezelShape.holes.push(roundedRect(0.60, 0.52, 0.10));
+  // Рамка занимает почти весь фасад: справа осталась только одна ручка, и
+  // панель под неё нужна узкая. Раньше там жили вторая ручка, регулятор и
+  // решётка динамика — от них экран и был вдвое уже, чем мог быть.
+  const BX = -0.11;
+  // Высота прежняя: рамка стоит плитой впереди фасада, и по высоте корпус
+  // уже скруглён — подняв её, углы вылезали за силуэт. Растём только вширь.
+  const bezelShape = roundedRect(0.82, 0.66, 0.13);
+  bezelShape.holes.push(roundedRect(0.68, 0.52, 0.10));
   const bezelGeo = keep(new THREE.ExtrudeGeometry(bezelShape, {
     depth: 0.07, bevelEnabled: true, bevelSize: 0.012, bevelThickness: 0.012, bevelSegments: 2,
   }));
@@ -419,7 +423,7 @@ function buildTV(pal) {
 
   // Экран чуть больше отверстия: край уходит под рамку, стыка не видно.
   // Купол сильный и вылезает за рамку — колба выпучена наружу.
-  const screenGeo = keep(new THREE.PlaneGeometry(0.62, 0.54, 24, 20));
+  const screenGeo = keep(new THREE.PlaneGeometry(0.70, 0.54, 24, 20));
   bulgeScreen(screenGeo, 0.17);
   const screenMat = keep(new THREE.ShaderMaterial({
     vertexShader: SCREEN_VERT,
@@ -441,27 +445,13 @@ function buildTV(pal) {
   glow.position.set(BX, 0, 0.62);
   tilt.add(glow);
 
-  // Ручки нарочно большие: мелкие детали в этой стилистике не читаются
-  const knobGeo = keep(new THREE.CylinderGeometry(0.075, 0.082, 0.055, 16));
-  for (const y of [0.21, 0.01]) {
-    const k = new THREE.Mesh(knobGeo, matKnob);
-    k.rotation.x = Math.PI / 2;
-    k.position.set(0.36, y, 0.40);
-    tilt.add(k);
-  }
-  const dialGeo = keep(new THREE.CylinderGeometry(0.032, 0.032, 0.03, 12));
-  const dial = new THREE.Mesh(dialGeo, matMetal);
-  dial.rotation.x = Math.PI / 2;
-  dial.position.set(0.36, -0.16, 0.41);
-  tilt.add(dial);
-
-  // Решётка динамика
-  const barGeo = keep(new THREE.BoxGeometry(0.20, 0.018, 0.018));
-  for (let i = 0; i < 4; i++) {
-    const bar = new THREE.Mesh(barGeo, matBezel);
-    bar.position.set(0.36, -0.26 - i * 0.045, 0.40);
-    tilt.add(bar);
-  }
+  // Одна ручка — просто чтобы фасад не был голым. Крупная: мелкие детали в
+  // этой стилистике не читаются.
+  const knobGeo = keep(new THREE.CylinderGeometry(0.062, 0.068, 0.05, 16));
+  const knob = new THREE.Mesh(knobGeo, matKnob);
+  knob.rotation.x = Math.PI / 2;
+  knob.position.set(0.42, 0.02, 0.40);
+  tilt.add(knob);
 
   // Антенны — комнатные «рожки»: приплюснутое блюдце с хромированным винтом
   // по центру, из него два телескопических штыря узким домиком. У каждого
@@ -535,8 +525,8 @@ function buildTV(pal) {
     antennas.push({ pivot, a: 0, av: 0, side: spec.side });
   }
 
-  // Ножки — коротенькие и толстые
-  const footGeo = keep(new THREE.CylinderGeometry(0.055, 0.048, FOOT_H, 10));
+  // Ножки — минимальные, только чтобы корпус не лежал на полу брюхом
+  const footGeo = keep(new THREE.CylinderGeometry(0.030, 0.026, FOOT_H, 8));
   for (const sx of [-1, 1]) {
     for (const sz of [-1, 1]) {
       const f = new THREE.Mesh(footGeo, matKnob);
