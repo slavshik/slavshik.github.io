@@ -152,14 +152,14 @@ export function updateRopeMesh(geo: THREE.BufferGeometry, rope: Rope): void {
 
 export function shadowTexture(): THREE.CanvasTexture {
 	const c = document.createElement('canvas');
-	c.width = c.height = 64;
+	c.width = c.height = 128;
 	const ctx = c.getContext('2d')!;
-	const g = ctx.createRadialGradient(32, 32, 2, 32, 32, 31);
+	const g = ctx.createRadialGradient(64, 64, 4, 64, 64, 62);
 	g.addColorStop(0, 'rgba(0,0,0,0.55)');
 	g.addColorStop(0.55, 'rgba(0,0,0,0.22)');
 	g.addColorStop(1, 'rgba(0,0,0,0)');
 	ctx.fillStyle = g;
-	ctx.fillRect(0, 0, 64, 64);
+	ctx.fillRect(0, 0, 128, 128);
 	const tex = new THREE.CanvasTexture(c);
 	tex.colorSpace = THREE.NoColorSpace;
 	return tex;
@@ -178,7 +178,15 @@ export function buildTV(pal: Palette): TvParts {
 		const m = keep(
 			new THREE.MeshStandardMaterial(
 				Object.assign(
-					{ color: new THREE.Color(pal[role]), roughness: 0.58, metalness: 0.05 },
+					{
+						color: new THREE.Color(pal[role]),
+						roughness: 0.58,
+						metalness: 0.05,
+						// Бок корпуса — большое ровное пятно с плавным
+						// затуханием, и в восьми битах на канал по нему идут
+						// полосы. Дизеринг разбивает их шумом в пол-единицы.
+						dithering: true,
+					},
 					extra,
 				),
 			),
@@ -203,10 +211,12 @@ export function buildTV(pal: Palette): TvParts {
 	// родителя вокруг Z, поэтому проекция экрана остаётся ортогональной и
 	// пересчёт «экранные пиксели ↔ мир» остаётся тривиальным.
 	const tilt = new THREE.Group();
-	tilt.rotation.set(-0.07, -0.54, 0);
+	// Наклон по X положительный: смотрим на игрушку чуть сверху, крышку с
+	// блюдцем антенн видно, днище — нет. Снизу смотреть не на что.
+	tilt.rotation.set(0.17, -0.54, 0);
 
 	// Углы скруглены крупно — главный приём игрушечного силуэта
-	const shellGeo = keep(new RoundedBoxGeometry(BODY_W, BODY_H, BODY_D, 4, 0.15));
+	const shellGeo = keep(new RoundedBoxGeometry(BODY_W, BODY_H, BODY_D, 8, 0.15));
 	taperShell(shellGeo);
 	tilt.add(new THREE.Mesh(shellGeo, matShell));
 
@@ -225,7 +235,10 @@ export function buildTV(pal: Palette): TvParts {
 			bevelEnabled: true,
 			bevelSize: 0.012,
 			bevelThickness: 0.012,
-			bevelSegments: 2,
+			bevelSegments: 3,
+			// Скругления рамки заданы кривыми, и их дробность — здесь: по
+			// умолчанию их двенадцать на кривую, и углы окна видны гранями.
+			curveSegments: 32,
 		}),
 	);
 	const bezel = new THREE.Mesh(bezelGeo, matBezel);
@@ -237,7 +250,7 @@ export function buildTV(pal: Palette): TvParts {
 
 	// Экран чуть больше отверстия: край уходит под рамку, стыка не видно.
 	// Купол сильный и вылезает за рамку — колба выпучена наружу.
-	const screenGeo = keep(new THREE.PlaneGeometry(0.86, 0.54, 28, 20));
+	const screenGeo = keep(new THREE.PlaneGeometry(0.86, 0.54, 44, 32));
 	bulgeScreen(screenGeo, 0.17);
 	const screenMat = keep(
 		new THREE.ShaderMaterial({
@@ -273,18 +286,25 @@ export function buildTV(pal: Palette): TvParts {
 	// Блюдце стоит НА крышке и чуть ближе к переду: утопленное в корпус или
 	// сдвинутое к затылку, оно с этого ракурса просто не видно.
 	const ANT_Z = -0.03;
+	// Крышка на этой глубине ужата сужением корпуса, и её верх — не BODY_H / 2,
+	// а BODY_H / 2 * taperAt(ANT_Z). По номинальной высоте блюдце висело над
+	// корпусом с зазором, который стало видно, как только камера поднялась.
+	// Небольшой утоп добавлен нарочно: стык двух матовых поверхностей впритык
+	// даёт волосяную щель на просвет.
+	const DISH_Y = (BODY_H / 2) * taperAt(ANT_Z) - 0.012;
 	const antBase = new THREE.Mesh(
-		keep(new THREE.SphereGeometry(0.19, 22, 8, 0, Math.PI * 2, 0, Math.PI / 2)),
+		keep(new THREE.SphereGeometry(0.19, 40, 14, 0, Math.PI * 2, 0, Math.PI / 2)),
 		matKnob,
 	);
 	antBase.scale.set(1, 0.42, 1);
-	antBase.position.set(0, BODY_H / 2 + 0.015, ANT_Z);
+	antBase.position.set(0, DISH_Y, ANT_Z);
 	tilt.add(antBase);
 
-	const ANT_Y = BODY_H / 2 + 0.075;
+	// Шарнир — там же, где и был относительно блюдца: у его макушки.
+	const ANT_Y = DISH_Y + 0.06;
 
 	const antScrew = new THREE.Mesh(
-		keep(new THREE.CylinderGeometry(0.019, 0.026, 0.05, 8)),
+		keep(new THREE.CylinderGeometry(0.019, 0.026, 0.05, 20)),
 		matSteel,
 	);
 	antScrew.position.set(0, ANT_Y + 0.012, ANT_Z);
@@ -312,7 +332,7 @@ export function buildTV(pal: Palette): TvParts {
 		let y = 0;
 		for (let i = 0; i < SEG_R.length; i++) {
 			const h = spec.len * SEG_PART[i]!;
-			const segGeo = keep(new THREE.CylinderGeometry(SEG_R[i]! * 0.9, SEG_R[i]!, h, 8));
+			const segGeo = keep(new THREE.CylinderGeometry(SEG_R[i]! * 0.9, SEG_R[i]!, h, 16));
 			segGeo.translate(0, h / 2, 0);
 			const seg = new THREE.Mesh(segGeo, matSteel);
 			seg.position.y = y;
@@ -320,7 +340,7 @@ export function buildTV(pal: Palette): TvParts {
 			// Обжимка на стыке: без неё три цилиндра читаются одним конусом
 			if (i) {
 				const ring = new THREE.Mesh(
-					keep(new THREE.CylinderGeometry(SEG_R[i]! * 1.45, SEG_R[i]! * 1.45, 0.014, 8)),
+					keep(new THREE.CylinderGeometry(SEG_R[i]! * 1.45, SEG_R[i]! * 1.45, 0.014, 16)),
 					matSteel,
 				);
 				ring.position.y = y;
@@ -328,7 +348,7 @@ export function buildTV(pal: Palette): TvParts {
 			}
 			y += h;
 		}
-		const tip = new THREE.Mesh(keep(new THREE.SphereGeometry(0.027, 10, 8)), matSteel);
+		const tip = new THREE.Mesh(keep(new THREE.SphereGeometry(0.027, 20, 14)), matSteel);
 		tip.position.y = y;
 		arm.add(tip);
 
@@ -338,7 +358,7 @@ export function buildTV(pal: Palette): TvParts {
 	}
 
 	// Ножки — минимальные, только чтобы корпус не лежал на полу брюхом
-	const footGeo = keep(new THREE.CylinderGeometry(0.03, 0.026, FOOT_H, 8));
+	const footGeo = keep(new THREE.CylinderGeometry(0.03, 0.026, FOOT_H, 20));
 	// Каждая ножка садится по своей глубине: корпус к затылку ужат, и дно там
 	// выше. По номинальной высоте задняя пара висела в воздухе с зазором в
 	// полножки. По X сужение учитывается тоже, иначе задние уезжают из-под
@@ -359,7 +379,7 @@ export function buildTV(pal: Palette): TvParts {
 	const plug = new THREE.Group();
 
 	const plugBody = new THREE.Mesh(
-		keep(new THREE.CylinderGeometry(0.07, 0.082, 0.155, 16)),
+		keep(new THREE.CylinderGeometry(0.07, 0.082, 0.155, 28)),
 		matPlug,
 	);
 	plugBody.position.y = -0.02;
@@ -377,16 +397,16 @@ export function buildTV(pal: Palette): TvParts {
 
 	// Фланец — диск у основания штырей
 	const flange = new THREE.Mesh(
-		keep(new THREE.CylinderGeometry(0.093, 0.093, 0.028, 18)),
+		keep(new THREE.CylinderGeometry(0.093, 0.093, 0.028, 32)),
 		matPlug,
 	);
 	flange.position.y = -0.111;
 	plug.add(flange);
 
 	// Штыри — латунь, с закруглёнными концами
-	const prongGeo = keep(new THREE.CylinderGeometry(0.017, 0.017, 0.115, 10));
+	const prongGeo = keep(new THREE.CylinderGeometry(0.017, 0.017, 0.115, 18));
 	prongGeo.translate(0, -0.0575, 0);
-	const prongCapGeo = keep(new THREE.SphereGeometry(0.017, 10, 8));
+	const prongCapGeo = keep(new THREE.SphereGeometry(0.017, 18, 12));
 	for (const sx of [-1, 1]) {
 		const prong = new THREE.Mesh(prongGeo, matMetal);
 		prong.position.set(sx * 0.04, -0.125, 0);

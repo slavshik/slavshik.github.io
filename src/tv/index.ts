@@ -89,12 +89,17 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 	let forceDark: boolean | null = opts.forceDark === undefined ? null : opts.forceDark;
 	let pal: Palette = readPalette(forceDark);
 
+	// MSAA включён всегда. Раньше он выключался на плотных экранах в расчёте
+	// на то, что пиксели там и так мелкие, — но канвас маленький, силуэт у
+	// игрушки почти весь из наклонных рёбер, и лесенка на них видна на любом
+	// DPR. Игрушка занимает четверть экрана и рисуется по кадру только когда
+	// шевелится, так что платить за MSAA есть чем.
 	const renderer = new THREE.WebGLRenderer({
-		antialias: window.devicePixelRatio < 2,
+		antialias: true,
 		alpha: true,
 		powerPreference: 'low-power',
 	});
-	renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
+	renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 	el.appendChild(renderer.domElement);
 
 	const scene = new THREE.Scene();

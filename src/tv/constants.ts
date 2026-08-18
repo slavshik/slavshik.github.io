@@ -22,7 +22,7 @@ export const CAM_DIST = 3.4;
 /* Проводок: верле-цепочка, висящая из задней стенки */
 export const ROPE_N = 14; // точек в цепочке
 export const ROPE_SEG = 0.075; // длина звена
-export const ROPE_R = 6; // радиальных сегментов трубки
+export const ROPE_R = 12; // радиальных сегментов трубки
 export const ROPE_RAD = 0.018; // толщина
 export const ROPE_Z = -0.34; // плоскость, в которой болтается
 
