@@ -26,7 +26,7 @@ const FOOT_H = 0.07;
 
 const HALF_H = BODY_H / 2 + FOOT_H;   // от центра масс до низа ножек
 const HALF_W = BODY_W / 2;
-const TV_VIS_H = BODY_H + FOOT_H + 0.34;  // с антеннами — по этому масштабируем
+const TV_VIS_H = BODY_H + FOOT_H + 0.50;  // с антеннами — по этому масштабируем
 
 const FOV = 30;
 const CAM_DIST = 3.4;
@@ -98,9 +98,10 @@ function readPalette(forceDark) {
     shell:  '#e8543a',   // тёплый красно-оранжевый
     bezel:  '#f6ead3',   // сливочная рамка
     knob:   '#322f38',   // почти чёрный
-    metal:  '#f2b134',   // жёлтые шарики на антеннах
+    steel:  '#b6bcc3',   // телескопические колена антенн и шарики
+    metal:  '#c08b2a',   // латунные штыри вилки
     cord:   '#322f38',
-    plug:   '#f6ead3',
+    plug:   '#2a2830',   // чёрный корпус вилки
   };
 }
 
@@ -372,7 +373,10 @@ function buildTV(pal) {
   const matShell = plastic('shell', { roughness: 0.85 });
   const matBezel = plastic('bezel', { roughness: 0.9 });
   const matKnob  = plastic('knob',  { roughness: 0.8 });
-  const matMetal = plastic('metal', { roughness: 0.7 });
+  // Металл на игрушке ровно в двух местах: колена антенн и штыри вилки.
+  // Блики им оставлены нарочно — матовая сталь читается крашеным пластиком.
+  const matSteel = plastic('steel', { roughness: 0.32, metalness: 0.80 });
+  const matMetal = plastic('metal', { roughness: 0.34, metalness: 0.85 });
   const matCord  = plastic('cord',  { roughness: 0.85 });
   const matPlug  = plastic('plug',  { roughness: 0.85 });
 
@@ -447,30 +451,70 @@ function buildTV(pal) {
     tilt.add(bar);
   }
 
-  // Антенны: у каждой свой шарнир, который догоняет корпус с запозданием.
-  // Геометрия стержня сдвинута так, что его основание лежит в начале
-  // координат — тогда наклон это просто поворот группы, без тригонометрии
-  // на позицию (и без шанса ошибиться в знаке).
+  // Антенны — комнатные «рожки»: приплюснутое блюдце с хромированным винтом
+  // по центру, из него два телескопических штыря узким домиком. У каждого
+  // штыря свой шарнир, который догоняет корпус с запозданием. Геометрия колена
+  // сдвинута так, что его низ лежит в начале координат — тогда наклон это
+  // просто поворот группы, без тригонометрии на позицию (и без шанса
+  // ошибиться в знаке).
   //
-  // Разной длины и с разным развалом: симметричная пара выглядит технично,
-  // а несимметричная — глупо, что нам и нужно. Шарики на концах крупные.
+  // Длины чуть разные: идеально симметричная пара выглядит технично, а
+  // разная — глупо, что нам и нужно.
+  // Блюдце стоит НА крышке и чуть ближе к переду: утопленное в корпус или
+  // сдвинутое к затылку, оно с этого ракурса просто не видно.
+  const ANT_Z = -0.03;
+  const antBase = new THREE.Mesh(
+    keep(new THREE.SphereGeometry(0.19, 22, 8, 0, Math.PI * 2, 0, Math.PI / 2)),
+    matKnob);
+  antBase.scale.set(1, 0.42, 1);
+  antBase.position.set(0, BODY_H / 2 + 0.015, ANT_Z);
+  tilt.add(antBase);
+
+  const ANT_Y = BODY_H / 2 + 0.075;
+
+  const antScrew = new THREE.Mesh(
+    keep(new THREE.CylinderGeometry(0.019, 0.026, 0.05, 8)), matSteel);
+  antScrew.position.set(0, ANT_Y + 0.012, ANT_Z);
+  tilt.add(antScrew);
+
+  // Колена: снизу толстое и короткое, кверху тоньше и длиннее — так выглядит
+  // выдвинутая антенна, у которой секции входят одна в другую.
+  const SEG_R = [0.0210, 0.0155, 0.0105];
+  const SEG_PART = [0.28, 0.33, 0.39];
+
   const antennas = [];
   const antSpec = [
-    { side: -1, len: 0.66, splay: 0.52, back: -0.26, ball: 0.055 },
-    { side:  1, len: 0.50, splay: 0.28, back: -0.16, ball: 0.045 },
+    { side: -1, len: 0.56, splay: 0.15, back: -0.09 },
+    { side:  1, len: 0.49, splay: 0.11, back: -0.06 },
   ];
   for (const spec of antSpec) {
-    const rodGeo = keep(new THREE.CylinderGeometry(0.008, 0.012, spec.len, 6));
-    rodGeo.translate(0, spec.len / 2, 0);
-    const tipGeo = keep(new THREE.SphereGeometry(spec.ball, 10, 8));
     const pivot = new THREE.Group();                 // сюда пишет пружина
-    pivot.position.set(spec.side * 0.19, BODY_H / 2 - 0.03, -0.06);
+    pivot.position.set(spec.side * 0.050, ANT_Y, ANT_Z);
     const arm = new THREE.Group();                   // постоянный развал «ушей»
     arm.rotation.set(spec.back, 0, spec.side * spec.splay);
-    const rod = new THREE.Mesh(rodGeo, matKnob);
-    const tip = new THREE.Mesh(tipGeo, matMetal);
-    tip.position.y = spec.len;
-    arm.add(rod, tip);
+
+    let y = 0;
+    for (let i = 0; i < SEG_R.length; i++) {
+      const h = spec.len * SEG_PART[i];
+      const segGeo = keep(new THREE.CylinderGeometry(SEG_R[i] * 0.9, SEG_R[i], h, 8));
+      segGeo.translate(0, h / 2, 0);
+      const seg = new THREE.Mesh(segGeo, matSteel);
+      seg.position.y = y;
+      arm.add(seg);
+      // Обжимка на стыке: без неё три цилиндра читаются одним конусом
+      if (i) {
+        const ring = new THREE.Mesh(
+          keep(new THREE.CylinderGeometry(SEG_R[i] * 1.45, SEG_R[i] * 1.45, 0.014, 8)),
+          matSteel);
+        ring.position.y = y;
+        arm.add(ring);
+      }
+      y += h;
+    }
+    const tip = new THREE.Mesh(keep(new THREE.SphereGeometry(0.027, 10, 8)), matSteel);
+    tip.position.y = y;
+    arm.add(tip);
+
     pivot.add(arm);
     tilt.add(pivot);
     antennas.push({ pivot, a: 0, av: 0, side: spec.side });
@@ -487,16 +531,42 @@ function buildTV(pal) {
   }
 
   /* Вилка на конце провода. Висит в воздухе и никуда не воткнута — при этом
-     экран работает. Ради этой шутки провод и заведён. */
+     экран работает. Ради этой шутки провод и заведён.
+     Круглая и чёрная, с рёбрами под пальцы и латунными штырями. */
   const plug = new THREE.Group();
-  const plugBody = new THREE.Mesh(keep(new RoundedBoxGeometry(0.15, 0.175, 0.095, 2, 0.036)), matPlug);
+
+  const plugBody = new THREE.Mesh(
+    keep(new THREE.CylinderGeometry(0.070, 0.082, 0.155, 16)), matPlug);
+  plugBody.position.y = -0.020;
   plug.add(plugBody);
-  const prongGeo = keep(new THREE.CylinderGeometry(0.018, 0.018, 0.13, 8));
-  prongGeo.translate(0, -0.065, 0);
+
+  // Рёбра под пальцы: восьми хватает, чтобы силуэт перестал быть гладким
+  const ribGeo = keep(new THREE.BoxGeometry(0.012, 0.100, 0.016));
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    const rib = new THREE.Mesh(ribGeo, matPlug);
+    rib.position.set(Math.cos(a) * 0.074, -0.020, Math.sin(a) * 0.074);
+    rib.rotation.y = Math.PI / 2 - a;
+    plug.add(rib);
+  }
+
+  // Фланец — диск у основания штырей
+  const flange = new THREE.Mesh(
+    keep(new THREE.CylinderGeometry(0.093, 0.093, 0.028, 18)), matPlug);
+  flange.position.y = -0.111;
+  plug.add(flange);
+
+  // Штыри — латунь, с закруглёнными концами
+  const prongGeo = keep(new THREE.CylinderGeometry(0.017, 0.017, 0.115, 10));
+  prongGeo.translate(0, -0.0575, 0);
+  const prongCapGeo = keep(new THREE.SphereGeometry(0.017, 10, 8));
   for (const sx of [-1, 1]) {
-    const prong = new THREE.Mesh(prongGeo, matKnob);
-    prong.position.set(sx * 0.042, -0.086, 0);
+    const prong = new THREE.Mesh(prongGeo, matMetal);
+    prong.position.set(sx * 0.040, -0.125, 0);
     plug.add(prong);
+    const cap = new THREE.Mesh(prongCapGeo, matMetal);
+    cap.position.set(sx * 0.040, -0.240, 0);
+    plug.add(cap);
   }
   plug.position.z = ROPE_Z;
 
