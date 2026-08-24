@@ -199,9 +199,13 @@ export default {
 
 		const q = url.searchParams;
 
-		// Визит считается всегда — и под пиксель, и под ролик. Один ключ n на
-		// оба запроса, поэтому на той стороне это один визит, а не два.
-		ctx.waitUntil(recordVisit(request, env, q));
+		// Считаются начала, а не байты. Браузер тянет медиа диапазонами, и один
+		// ролик приезжает несколькими запросами; засчитывать каждый значит
+		// умножать показы на прихоть проигрывателя. Продолжение — это Range не
+		// с нуля, и оно не событие.
+		const range = request.headers.get('range');
+		const continuation = !!range && !/^bytes=0-/.test(range.trim());
+		if (!continuation) ctx.waitUntil(recordVisit(request, env, q));
 
 		if (q.get('tex') !== '1') {
 			return new Response(PIXEL, {
