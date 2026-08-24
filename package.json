@@ -10,7 +10,7 @@
 		"dev": "vite",
 		"build": "npm run typecheck && vite build",
 		"preview": "vite preview",
-		"typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json",
+		"typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && tsc -p worker/tsconfig.json",
 		"lint": "eslint .",
 		"format": "prettier --write .",
 		"format:check": "prettier --check .",
@@ -21,6 +21,7 @@
 		"three": "0.185.1"
 	},
 	"devDependencies": {
+		"@cloudflare/workers-types": "^5.20260823.1",
 		"@eslint/js": "^10.0.1",
 		"@playwright/test": "^1.62.1",
 		"@types/node": "^26.2.0",

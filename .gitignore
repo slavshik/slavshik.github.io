@@ -4,3 +4,4 @@ test/shots/
 test-results/
 playwright-report/
 /.idea
+.wrangler/

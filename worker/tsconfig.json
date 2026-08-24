@@ -1,0 +1,13 @@
+/*
+ * Worker — не браузер и не node: у него свой набор глобалей. Отдельный
+ * tsconfig нужен именно поэтому, а не ради других правил: строгость
+ * наследуется от корневого.
+ */
+{
+	"extends": "../tsconfig.json",
+	"compilerOptions": {
+		"lib": ["ES2022"],
+		"types": ["@cloudflare/workers-types"]
+	},
+	"include": ["src"]
+}

@@ -1,0 +1,37 @@
+// Worker, отдающий /api/hit. Живёт на том же домене, что и сайт, — поэтому у
+// запроса нет ни отдельного DNS, ни рукопожатия, ни CORS, и блокировщики его
+// не режут: это свой домен и это контент, а не трекер.
+//
+// Сайт при этом остаётся на GitHub Pages. Worker перехватывает ровно два
+// пути, всё остальное уходит на Pages как раньше.
+//
+// Секреты сюда не пишутся:
+//   npx wrangler secret put CAST_TOKEN --config worker/wrangler.jsonc
+//   npx wrangler secret put VISITOR_SALT --config worker/wrangler.jsonc
+{
+	"$schema": "../node_modules/wrangler/config-schema.json",
+	"name": "tvset",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-08-20",
+	"workers_dev": false,
+	"observability": { "enabled": true },
+
+	// Ролики, которые заливает tvcast с NAS
+	"kv_namespaces": [{ "binding": "TVSET", "id": "eddc1f214d7644b4980fe3b7b61b4220" }],
+
+	// События. Пока база не заведена, Worker молча не пишет аналитику и
+	// работает дальше — ролики отдаются в любом случае.
+	// "d1_databases": [
+	// 	{ "binding": "EVENTS", "database_name": "tvset-events", "database_id": "ЗАПОЛНИТЬ" }
+	// ],
+
+	// Звёздочка после /api/hit обязательна. Маршрут сопоставляется с полным
+	// URL, включая строку запроса, а страница всегда шлёт параметры визита —
+	// без звёздочки Worker получал бы только голый /api/hit, а всё остальное
+	// уходило бы на Pages за 404. Лишнего это не перехватывает: сам Worker
+	// отвечает 404 на любой путь, кроме ровно /api/hit.
+	"routes": [
+		{ "pattern": "slavshik.me/api/hit*", "zone_name": "slavshik.me" },
+		{ "pattern": "slavshik.me/api/cast/*", "zone_name": "slavshik.me" },
+	],
+}
