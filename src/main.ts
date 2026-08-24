@@ -1,5 +1,7 @@
 import './styles.css';
 
+import { HIT_URL, hitQuery, nonce, optedOut, sendHit } from './analytics.js';
+
 /* ── Акцент ─────────────────────────────────────────────────────────────
  * Меняется по местному времени посетителя: рассвет, день, закат, ночь.
  * Единственная «живая» деталь страницы — и она честная: никаких выдуманных
@@ -124,11 +126,34 @@ import './styles.css';
 		}
 	}
 
+	// Один запрос на визит и он же — источник картинки для экрана. В
+	// неподвижном режиме не шлётся вовсе: эталоны не ходят в сеть.
+	// Посетителя, попросившего себя не считать, не считаем и передачу ему не
+	// показываем — второй запрос был бы тем же самым событием.
+	let broadcastUrl: ((seq: number) => string) | null = null;
+	if (!aqa && !optedOut(navigator)) {
+		const query = hitQuery({
+			path: location.pathname,
+			search: location.search,
+			referrer: document.referrer,
+			viewport: `${innerWidth}x${innerHeight}`,
+			dpr: devicePixelRatio || 1,
+			theme: document.documentElement.dataset.theme ?? 'auto',
+			nonce: nonce(),
+			origin: location.origin,
+		});
+		sendHit(query);
+		// Один и тот же ключ визита во всех кадрах: на той стороне это один
+		// визит с несколькими показами, а не десяток визитов от человека,
+		// которому понравилось пинать телевизор.
+		broadcastUrl = (seq: number) => `${HIT_URL}${query}&tex=1&seq=${seq}`;
+	}
+
 	if (wanted && stage) {
 		const boot = (): void => {
 			import('./tv/index.js')
 				.then((m) => {
-					m.mount(stage, { frozen: aqa });
+					m.mount(stage, { frozen: aqa, broadcastUrl });
 					// Класс — только после удачного монтирования: подложка под именем
 					// нужна ровно тогда, когда за именем правда что-то летает.
 					document.documentElement.classList.add('tv-on');
