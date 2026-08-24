@@ -16,8 +16,9 @@ export const SCREEN_VERT = /* glsl */ `
 
 export const SCREEN_FRAG = /* glsl */ `
   varying vec2 vUv;
-  uniform float uTime, uIntensity, uRoll;
+  uniform float uTime, uIntensity, uRoll, uTexMix;
   uniform vec3  uAccent;
+  uniform sampler2D uTex;
 
   float hash(vec2 p) {
     p = fract(p * vec2(443.897, 441.423));
@@ -46,8 +47,20 @@ export const SCREEN_FRAG = /* glsl */ `
     vec2  c   = abs(uv - 0.5) * 2.0;
     float vig = smoothstep(1.02, 0.95, c.x) * smoothstep(1.02, 0.94, c.y);
 
+    // Передача, если она пришла. Сэмплируется теми же uv, что и шум, — то
+    // есть уже сорванными: срыв кадра рвёт картинку так же, как рвал снег.
+    // Пока uTexMix нулевой, в uTex лежит заглушка 1×1, и текстурная выборка
+    // ни на что не влияет — ветвление тут было бы дороже самой выборки.
+    vec3 sig = texture2D(uTex, uv).rgb;
+
+    // Зерно трубки подмешивается в передачу, но не в снег: без передачи
+    // сигнал обязан остаться ровно тем же шумом, что и был, иначе меняется
+    // вид экрана у всех, кому ролик не доехал.
+    vec3 pic = sig + (n - 0.5) * 0.22;
+    vec3 signal = mix(vec3(n), pic, uTexMix * 0.88);
+
     // Снег белый: акцент уходит в свечение, а не в сам шум.
-    vec3 col = vec3(n) * scan * vig;
+    vec3 col = signal * scan * vig;
     col = mix(col, col * uAccent * 1.6, 0.09);
     col += uAccent * 0.05 * vig;                 // ореол трубки
 

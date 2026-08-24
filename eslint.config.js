@@ -25,6 +25,14 @@ export default tseslint.config(
 		},
 	},
 	{
+		// Worker: ни DOM, ни node. Глобали у него свои — их приносит
+		// @cloudflare/workers-types, а линтеру достаточно знать, что они есть.
+		files: ['worker/**/*.ts'],
+		languageOptions: {
+			globals: { ...globals.serviceworker, ...globals.browser },
+		},
+	},
+	{
 		// Тесты и конфиги живут в node, но page.evaluate() исполняется в
 		// браузере — и пишется прямо здесь, поэтому глобали нужны обе.
 		files: ['test/**/*.{ts,mjs}', '*.config.{ts,js}'],

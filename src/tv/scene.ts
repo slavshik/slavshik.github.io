@@ -252,6 +252,12 @@ export function buildTV(pal: Palette): TvParts {
 	// Купол сильный и вылезает за рамку — колба выпучена наружу.
 	const screenGeo = keep(new THREE.PlaneGeometry(0.86, 0.54, 44, 32));
 	bulgeScreen(screenGeo, 0.17);
+	// Заглушка под uTex: сэмплер обязан быть привязан к чему-то и тогда, когда
+	// передачи нет. Один чёрный пиксель — при uTexMix = 0 он всё равно не
+	// участвует в картинке.
+	const blankTex = keep(new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1));
+	blankTex.needsUpdate = true;
+
 	const screenMat = keep(
 		new THREE.ShaderMaterial({
 			vertexShader: SCREEN_VERT,
@@ -261,6 +267,8 @@ export function buildTV(pal: Palette): TvParts {
 				uIntensity: { value: 0 },
 				uRoll: { value: 0 },
 				uAccent: { value: new THREE.Color(pal.accent) },
+				uTex: { value: blankTex },
+				uTexMix: { value: 0 },
 			},
 		}),
 	);

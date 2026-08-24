@@ -17,6 +17,7 @@
 
 import * as THREE from 'three';
 
+import { createTuner, type Tuner } from './broadcast.js';
 import {
 	CAM_DIST,
 	DEFAULTS,
@@ -50,6 +51,13 @@ export interface MountOptions {
 	params?: Partial<TvParams>;
 	frozen?: boolean;
 	forceDark?: boolean | null;
+	/**
+	 * Адрес n-го ролика для экрана. Функция, а не строка: по каждому пинку
+	 * телевизор просит следующий, и как из номера получается адрес — дело
+	 * страницы. Телевизор не знает, что этим же запросом считается визит:
+	 * аналитика собирается снаружи. Пусто или неудача — на экране снег.
+	 */
+	broadcastUrl?: ((seq: number) => string) | null;
 }
 
 /** Ссылки на внутренности. Стенду — да, продакшену — нет. */
@@ -157,6 +165,107 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 	let rollV = 0;
 	let nextGlitch = 3 + Math.random() * 5;
 
+	/* ── Передача ───────────────────────────────────────────────────────── */
+
+	// texMix ползёт к единице, когда ролик доехал: настройка на канал, а не
+	// подмена картинки. В неподвижном режиме передачи нет вовсе — эталоны не
+	// имеют права зависеть от сети.
+	let tuner: Tuner | null = null;
+	let texMix = 0;
+	let texWanted = 0;
+
+	/*
+	 * Захват синхронизации. Картинка не выцеловывается из шума плавно —
+	 * трубка ловит строку рывками: схватила, потеряла, схватила крепче.
+	 * Поэтому это ступени с провалами, а не кривая: между ними ничего не
+	 * интерполируется, и каждый скачок виден как скачок.
+	 *
+	 * Длительность взята короткой нарочно. Плавный разгон читался ожиданием,
+	 * а рваный обязан быть быстрым — иначе выглядит не захватом, а поломкой.
+	 */
+	const LOCK_STEPS: readonly { t: number; v: number }[] = [
+		{ t: 0.0, v: 0.5 },
+		{ t: 0.06, v: 0.05 },
+		{ t: 0.12, v: 0.8 },
+		{ t: 0.18, v: 0.25 },
+		{ t: 0.26, v: 1.0 },
+	];
+	const LOCK_END = 0.26;
+
+	// lockT < 0 — захват не идёт. Масштаб слегка гуляет, чтобы два соседних
+	// приземления не совпадали ступенька в ступеньку.
+	let lockT = -1;
+	let lockScale = 1;
+	let lockStep = -1;
+
+	function startLock(): void {
+		texWanted = 1;
+		lockT = 0;
+		lockScale = 0.85 + Math.random() * 0.3;
+		lockStep = -1;
+	}
+
+	if (!frozen && opts.broadcastUrl) {
+		const url = opts.broadcastUrl;
+		tuner = createTuner({
+			url,
+			onChannel: (texture) => {
+				tv.screenMat.uniforms.uTex!.value = texture;
+				// В воздухе картинку не показываем даже когда ролик доехал:
+				// там положено быть шуму. Включит её касание пола.
+				if (S.grounded) startLock();
+				else texWanted = 0;
+				// Срыв кадра ровно в момент появления картинки — так телевизор
+				// ловит канал, а не переключает слайд.
+				rollV = 1 / 0.3;
+				flashV = Math.max(flashV, 0.35);
+				wake();
+			},
+		});
+		tuner.setPlaying(true);
+	}
+
+	/*
+	 * Пока телевизор в воздухе — белый шум; сел на пол — картинка
+	 * калибруется обратно. Полёт ловится не по клику, а по состоянию физики:
+	 * подбросить корпус можно и броском, и колесом, и свайпом по странице, и
+	 * во всех случаях трубка обязана вести себя одинаково.
+	 *
+	 * Отскоки после падения — тоже полёты, и шум на них честный: картинка
+	 * дёргается, пока корпус скачет, и устаканивается вместе с ним. А вот
+	 * канал за один полёт меняется ровно один раз, иначе пара отскоков
+	 * пролистала бы половину альбома.
+	 */
+	let wasGrounded = false;
+	let channelPending = false;
+
+	/**
+	 * Новый канал заказывает зритель, а не физика: отскок — не повод менять
+	 * передачу, иначе одно падение пролистывало по пять роликов и столько же
+	 * раз лезло в сеть. Показать заказанное — уже дело пола.
+	 */
+	function requestChannel(): void {
+		channelPending = true;
+	}
+
+	function liftOff(): void {
+		texWanted = 0;
+		lockT = -1;
+		rollV = 1 / 0.22;
+	}
+
+	function landed(): void {
+		rollV = 1 / 0.3;
+		// Смена канала — на первом касании пола после полёта. Не доехал
+		// следующий ролик — вернётся прежний, и это не беда: телевизор
+		// дёрнулся, но канал не поймал.
+		if (channelPending) {
+			channelPending = false;
+			tuner?.tune();
+		}
+		if (tuner) startLock();
+	}
+
 	function flash(amount: number): void {
 		flashV = Math.max(flashV, amount);
 	}
@@ -181,9 +290,36 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 			}
 		}
 
+		if (texWanted === 0) {
+			// В шум — мгновенно, как оно и бывает, когда по телевизору стукнули
+			texMix = Math.max(0, texMix - dt / 0.09);
+		} else if (lockT >= 0) {
+			lockT += dt / lockScale;
+			let v = texMix;
+			let i = -1;
+			for (let k = 0; k < LOCK_STEPS.length; k++) {
+				if (lockT >= LOCK_STEPS[k]!.t) {
+					v = LOCK_STEPS[k]!.v;
+					i = k;
+				}
+			}
+			// Каждый переход на новую ступень рвёт строку: провал в шум сам по
+			// себе виден слабо, а вместе со срывом кадра читается разрывом.
+			if (i !== lockStep) {
+				lockStep = i;
+				rollV = Math.max(rollV, 1 / 0.14);
+			}
+			texMix = v;
+			if (lockT >= LOCK_END) {
+				texMix = 1;
+				lockT = -1;
+			}
+		}
+
 		const u = tv.screenMat.uniforms;
 		u.uTime!.value = t;
 		u.uRoll!.value = roll;
+		u.uTexMix!.value = texMix;
 		u.uIntensity!.value = ease + flashV;
 		tv.glow.intensity = (0.5 + flashV * 2.5) * ease;
 	}
@@ -200,6 +336,7 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 		env,
 		onWake: wake,
 		onFlash: flash,
+		onImpulse: requestChannel,
 	});
 
 	/* ── Шаг физики ─────────────────────────────────────────────────────── */
@@ -209,6 +346,14 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 	function physicsStep(dt: number): void {
 		const impact = stepWorld(world, dt);
 		if (impact > 2.2) flash(Math.min(impact * 0.22, 0.9));
+
+		if (tuner) {
+			if (S.grounded !== wasGrounded) {
+				if (S.grounded) landed();
+				else liftOff();
+				wasGrounded = S.grounded;
+			}
+		}
 	}
 
 	/* ── Раскладка ──────────────────────────────────────────────────────── */
@@ -328,10 +473,14 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 		running = true;
 		last = 0;
 		acc = 0;
+		tuner?.setPlaying(true);
 		raf = requestAnimationFrame(frame);
 	}
 	function stop(): void {
 		running = false;
+		// Вкладку спрятали или телевизор уехал за экран — декодировать видео
+		// незачем. Цикл встал, и текстура всё равно никуда не попадает.
+		tuner?.setPlaying(false);
 		cancelAnimationFrame(raf);
 		raf = 0;
 	}
@@ -423,6 +572,9 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 
 	function destroy(): void {
 		stop();
+		// Отменяет и ожидание ролика, если он ещё не доехал
+		tuner?.dispose();
+		tuner = null;
 		ro.disconnect();
 		io.disconnect();
 		document.removeEventListener('visibilitychange', onVis);

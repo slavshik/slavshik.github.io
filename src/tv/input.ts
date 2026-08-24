@@ -30,6 +30,12 @@ export interface InputDeps {
 	env: PhysicsEnv;
 	onWake: () => void;
 	onFlash: (amount: number) => void;
+	/**
+	 * Зритель тронул телевизор: тык, бросок, колесо или свайп по странице.
+	 * Отскоки сюда не попадают, и в этом весь смысл — новый канал заказывает
+	 * человек, а не физика.
+	 */
+	onImpulse: () => void;
 }
 
 export interface Input {
@@ -42,7 +48,7 @@ export interface Input {
 }
 
 export function createInput(deps: InputDeps): Input {
-	const { el, camera, rig, proxy, params, state: S, env, onWake, onFlash } = deps;
+	const { el, camera, rig, proxy, params, state: S, env, onWake, onFlash, onImpulse } = deps;
 
 	const raycaster = new THREE.Raycaster();
 	const ndc = new THREE.Vector2();
@@ -148,6 +154,7 @@ export function createInput(deps: InputDeps): Input {
 			S.vx += off * 2.0;
 			S.om -= off * 14.0;
 			onFlash(0.6);
+			onImpulse();
 		} else if (drag.hist.length > 1) {
 			// Бросок: скорость считаем по последним кадрам жеста
 			const a = drag.hist[0]!;
@@ -156,6 +163,7 @@ export function createInput(deps: InputDeps): Input {
 			S.vx = clamp(((b.x - a.x) / dt) * 1.1, -14, 14);
 			S.vy = clamp(((b.y - a.y) / dt) * 1.1, -14, 14);
 			S.om += clamp(-S.vx * 1.2, -10, 10);
+			onImpulse();
 		}
 		onWake();
 	}
@@ -168,6 +176,7 @@ export function createInput(deps: InputDeps): Input {
 		S.vx += d * params.wheelV;
 		S.om -= d * params.wheelV * 0.33;
 		S.vy += Math.abs(d) * params.wheelV * 0.85;
+		onImpulse();
 		onWake();
 	}
 
@@ -244,6 +253,7 @@ export function createInput(deps: InputDeps): Input {
 		S.vx += side * params.swipeV * 26;
 		S.om -= side * params.swipeV * 90;
 		onFlash(0.45);
+		onImpulse();
 		onWake();
 	}
 
