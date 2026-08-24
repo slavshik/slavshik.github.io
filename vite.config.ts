@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 
 import { defineConfig, type Plugin } from 'vitest/config';
 
@@ -16,9 +16,29 @@ import { defineConfig, type Plugin } from 'vitest/config';
  */
 const PIXEL = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
 
-/** Сколько роликов лежит в test/fixtures. */
-const CLIPS = 4;
-let lastClip = -1;
+/*
+ * Откуда берутся ролики. test/fixtures/local — свои кадры: репозиторий
+ * публичный, поэтому эта папка под .gitignore, и мок предпочитает её, если
+ * она не пуста. Без неё крутится синтетика, которая в git и лежит.
+ */
+const CLIP_DIRS = ['test/fixtures/local', 'test/fixtures'];
+
+function clips(): string[] {
+	for (const dir of CLIP_DIRS) {
+		try {
+			const found = readdirSync(dir)
+				.filter((f) => f.endsWith('.mp4'))
+				.sort()
+				.map((f) => `${dir}/${f}`);
+			if (found.length) return found;
+		} catch {
+			/* нет такой папки — идём к следующей */
+		}
+	}
+	return [];
+}
+
+let lastClip = '';
 
 function hitMock(): Plugin {
 	return {
@@ -40,10 +60,18 @@ function hitMock(): Plugin {
 				// запросе только просит следующий. Здесь он выбирается
 				// случайно, но никогда не повторяет предыдущий — иначе смена
 				// канала иногда выглядела бы поломкой.
-				let n = Math.floor(Math.random() * CLIPS);
-				if (n === lastClip) n = (n + 1) % CLIPS;
-				lastClip = n;
-				const clip = readFileSync(`test/fixtures/broadcast-${n}.mp4`);
+				const list = clips();
+				if (!list.length) {
+					res.statusCode = 404;
+					res.end();
+					return;
+				}
+				let pick = list[Math.floor(Math.random() * list.length)]!;
+				if (pick === lastClip && list.length > 1) {
+					pick = list[(list.indexOf(pick) + 1) % list.length]!;
+				}
+				lastClip = pick;
+				const clip = readFileSync(pick);
 				res.setHeader('content-type', 'video/mp4');
 				res.setHeader('cache-control', 'no-store');
 				res.setHeader('accept-ranges', 'bytes');

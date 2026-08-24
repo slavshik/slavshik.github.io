@@ -239,11 +239,19 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 	let wasGrounded = false;
 	let channelPending = false;
 
+	/**
+	 * Новый канал заказывает зритель, а не физика: отскок — не повод менять
+	 * передачу, иначе одно падение пролистывало по пять роликов и столько же
+	 * раз лезло в сеть. Показать заказанное — уже дело пола.
+	 */
+	function requestChannel(): void {
+		channelPending = true;
+	}
+
 	function liftOff(): void {
 		texWanted = 0;
 		lockT = -1;
 		rollV = 1 / 0.22;
-		channelPending = true;
 	}
 
 	function landed(): void {
@@ -328,6 +336,7 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 		env,
 		onWake: wake,
 		onFlash: flash,
+		onImpulse: requestChannel,
 	});
 
 	/* ── Шаг физики ─────────────────────────────────────────────────────── */
