@@ -322,6 +322,9 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 		u.uTexMix!.value = texMix;
 		u.uIntensity!.value = ease + flashV;
 		tv.glow.intensity = (0.5 + flashV * 2.5) * ease;
+		// Сияние горит и на пустом экране — снег тоже светится, — но под
+		// передачей вдвое сильнее: там и картинка ярче, и смотреть на неё.
+		tv.glowMat.opacity = (0.12 + 0.26 * texMix + flashV * 0.6) * ease;
 	}
 
 	/* ── Ввод ───────────────────────────────────────────────────────────── */
@@ -380,6 +383,9 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 		const accent = new THREE.Color(pal.accent);
 		(tv.screenMat.uniforms.uAccent!.value as THREE.Color).copy(accent);
 		tv.glow.color.copy(accent);
+		// Свет, а не светофильтр: чистый акцент в аддитивном пятне читается
+		// цветной плёнкой поверх стекла, поэтому он разбавлен белым.
+		tv.glowMat.color.copy(accent).lerp(new THREE.Color(0xffffff), 0.5);
 		fill.color.copy(accent);
 		hemi.color.set(pal.paper);
 		hemi.intensity = pal.dark ? 1.5 : 2.2;

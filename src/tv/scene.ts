@@ -30,6 +30,8 @@ export interface TvParts {
 	screen: THREE.Mesh;
 	screenMat: THREE.ShaderMaterial;
 	glow: THREE.PointLight;
+	/** Сияние стекла: аддитивное пятно перед рамкой. */
+	glowMat: THREE.MeshBasicMaterial;
 	antennas: AntennaPart[];
 	proxy: THREE.Mesh;
 	disposables: Disposable[];
@@ -148,6 +150,41 @@ export function updateRopeMesh(geo: THREE.BufferGeometry, rope: Rope): void {
 	}
 	geo.attributes.position!.needsUpdate = true;
 	geo.attributes.normal!.needsUpdate = true;
+}
+
+/**
+ * Мягкое пятно света. Кинескоп светит не только в рамку, но и в воздух перед
+ * собой, и именно этот ореол читается как «экран включён» — одного
+ * источника света внутри корпуса для этого мало, его видно только по бликам
+ * на пластике.
+ *
+ * Градиент нарочно нелинейный: линейный даёт заметный обод по краю пятна, и
+ * вместо свечения выходит наклейка.
+ */
+export function glowTexture(): THREE.CanvasTexture {
+	const c = document.createElement('canvas');
+	c.width = c.height = 128;
+	const ctx = c.getContext('2d')!;
+	// Не пятно, а кольцо: в середине пятна лежит сама картинка, и свет поверх
+	// неё съедает контраст — ровно то, что перед этим расчищали. Свету место
+	// у края стекла и за ним, где он и виден как свет.
+	//
+	// Радиусы привязаны к плоскости, а плоскость подогнана под пропорцию
+	// экрана — тогда круглый градиент становится эллипсом той же формы, и
+	// край окна оказывается на 0.54 по обеим осям сразу. Кольцо ставится
+	// заметно дальше, чтобы гореть по ту сторону стекла, а не по картинке.
+	const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+	g.addColorStop(0.0, 'rgba(255,255,255,0.07)');
+	g.addColorStop(0.4, 'rgba(255,255,255,0.13)');
+	g.addColorStop(0.62, 'rgba(255,255,255,0.85)');
+	g.addColorStop(0.74, 'rgba(255,255,255,0.45)');
+	g.addColorStop(0.88, 'rgba(255,255,255,0.11)');
+	g.addColorStop(1.0, 'rgba(255,255,255,0)');
+	ctx.fillStyle = g;
+	ctx.fillRect(0, 0, 128, 128);
+	const tex = new THREE.CanvasTexture(c);
+	tex.colorSpace = THREE.NoColorSpace;
+	return tex;
 }
 
 export function shadowTexture(): THREE.CanvasTexture {
@@ -281,6 +318,26 @@ export function buildTV(pal: Palette): TvParts {
 	const glow = new THREE.PointLight(new THREE.Color(pal.accent), 0, 1.4, 2);
 	glow.position.set(BX, 0, 0.62);
 	tilt.add(glow);
+
+	// Сияние на стекле. Стоит ПЕРЕД рамкой и не пишет глубину: иначе корпус
+	// его срежет, и вместо света в воздухе получится пятно внутри окна.
+	// Пятно шире окна — свет ложится и на рамку, и чуть за габарит.
+	const glowTex = keep(glowTexture());
+	const glowMat = keep(
+		new THREE.MeshBasicMaterial({
+			map: glowTex,
+			color: new THREE.Color(pal.accent),
+			transparent: true,
+			opacity: 0,
+			blending: THREE.AdditiveBlending,
+			depthWrite: false,
+			toneMapped: false,
+		}),
+	);
+	const screenGlow = new THREE.Mesh(keep(new THREE.PlaneGeometry(1.55, 1.0)), glowMat);
+	screenGlow.position.set(BX, 0, 0.52);
+	screenGlow.renderOrder = 2;
+	tilt.add(screenGlow);
 
 	// Антенны — комнатные «рожки»: приплюснутое блюдце с хромированным винтом
 	// по центру, из него два телескопических штыря узким домиком. У каждого
@@ -444,6 +501,7 @@ export function buildTV(pal: Palette): TvParts {
 		screen,
 		screenMat,
 		glow,
+		glowMat,
 		antennas,
 		proxy,
 		disposables,
