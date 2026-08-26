@@ -15,7 +15,7 @@ DOCKER   := docker run --rm -v "$(CURDIR)":/repo -v /repo/node_modules -w /repo
 
 .DEFAULT_GOAL := help
 .PHONY: help install dev preview lab og-lab render check test unit e2e e2e-update baselines \
-        size build og sitemap format lint
+        size syntax build og sitemap format lint
 
 help: ## Показать этот список
 	@grep -hE '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -81,7 +81,10 @@ baselines: ## Снять эталоны с коммита REF (по умолча
 size: build ## Проверить бюджет веса
 	@node test/size.mjs
 
-test: check unit e2e size ## Всё вместе
+syntax: build ## Проверить, что собранное разберётся в старых браузерах
+	@node test/syntax.mjs
+
+test: check unit e2e size syntax ## Всё вместе
 
 ## ─── обслуживание ────────────────────────────────────────────────────────
 

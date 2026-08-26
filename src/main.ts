@@ -1,6 +1,7 @@
 import './styles.css';
 
-import { HIT_URL, hitQuery, nonce, optedOut, sendHit } from './analytics.js';
+import { HIT_URL, hitQuery, nonce, optedOut, sendHit, withWhy } from './analytics.js';
+import type { TvWhy } from './analytics.js';
 
 /* ── Акцент ─────────────────────────────────────────────────────────────
  * Меняется по местному времени посетителя: рассвет, день, закат, ночь.
@@ -107,14 +108,22 @@ import { HIT_URL, hitQuery, nonce, optedOut, sendHit } from './analytics.js';
 	};
 	const net = nav.connection;
 
-	const wanted =
-		!!stage &&
+	// Не «да/нет», а «почему нет»: причина уезжает вместе с визитом. Со
+	// стороны отказ по делу и поломка выглядят одинаково — страницей без
+	// телевизора, — и различить их можно только отсюда.
+	function tvWhy(): TvWhy | '' {
+		if (!stage) return 'dom';
 		// Просили меньше движения — значит, никакого телевизора. Показывать
 		// вместо него статичную картинку было бы хуже, чем не показывать ничего.
-		!matchMedia('(prefers-reduced-motion: reduce)').matches &&
-		!(net && (net.saveData || /(^|-)2g$/.test(net.effectiveType || ''))) &&
-		!(nav.deviceMemory !== undefined && nav.deviceMemory < 2) &&
-		hasWebgl2();
+		if (matchMedia('(prefers-reduced-motion: reduce)').matches) return 'rm';
+		if (net && (net.saveData || /(^|-)2g$/.test(net.effectiveType || ''))) return 'net';
+		if (nav.deviceMemory !== undefined && nav.deviceMemory < 2) return 'mem';
+		if (!hasWebgl2()) return 'gl';
+		return '';
+	}
+
+	const why = tvWhy();
+	const wanted = !why;
 
 	// WebGL2 проверяем до импорта: не тянуть три четверти мегабайта туда,
 	// где нечем рисовать. С r163 three умеет только WebGL2.
@@ -131,6 +140,9 @@ import { HIT_URL, hitQuery, nonce, optedOut, sendHit } from './analytics.js';
 	// Посетителя, попросившего себя не считать, не считаем и передачу ему не
 	// показываем — второй запрос был бы тем же самым событием.
 	let broadcastUrl: ((seq: number) => string) | null = null;
+	// Доложить, что телевизор не завёлся. Пока визит не отправлен — докладывать
+	// некуда и незачем.
+	let reportFailure: (() => void) | null = null;
 	if (!aqa && !optedOut(navigator)) {
 		const query = hitQuery({
 			path: location.pathname,
@@ -141,8 +153,12 @@ import { HIT_URL, hitQuery, nonce, optedOut, sendHit } from './analytics.js';
 			theme: document.documentElement.dataset.theme ?? 'auto',
 			nonce: nonce(),
 			origin: location.origin,
+			why,
 		});
 		sendHit(query);
+		reportFailure = () => {
+			sendHit(withWhy(query, 'err'));
+		};
 		// Один и тот же ключ визита во всех кадрах: на той стороне это один
 		// визит с несколькими показами, а не десяток визитов от человека,
 		// которому понравилось пинать телевизор.
@@ -163,7 +179,10 @@ import { HIT_URL, hitQuery, nonce, optedOut, sendHit } from './analytics.js';
 					if (aqa) document.documentElement.setAttribute('data-tv', 'ready');
 				})
 				.catch(() => {
-					/* тихо: страница и без него целая */
+					// Тихо для посетителя: страница и без него целая. Но не тихо
+					// для нас — иначе браузер, в котором кусок не разбирается,
+					// снова полгода будет выглядеть как «ну не показалось».
+					reportFailure?.();
 				});
 		};
 		const idle: (f: () => void) => void =

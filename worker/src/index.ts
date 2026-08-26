@@ -89,6 +89,14 @@ async function visitorId(request: Request, env: Env, day: string): Promise<strin
 		.join('');
 }
 
+/**
+ * Отчего у посетителя нет телевизора. Список закрытый и сверяется здесь: это
+ * поле приезжает из строки запроса, то есть с чужого устройства, и попасть в
+ * базу свободным текстом оно не должно. Всё незнакомое — null.
+ */
+const WHY = new Set(['dom', 'rm', 'net', 'mem', 'gl', 'err']);
+const why = (x: string | null): string | null => (x && WHY.has(x) ? x : null);
+
 async function recordVisit(request: Request, env: Env, q: URLSearchParams): Promise<void> {
 	if (!env.EVENTS) return; // база ещё не заведена — молча мимо
 	const day = new Date().toISOString().slice(0, 10);
@@ -97,8 +105,8 @@ async function recordVisit(request: Request, env: Env, q: URLSearchParams): Prom
 		await env.EVENTS.prepare(
 			`INSERT INTO visits
 			   (at, visitor, country, asn, ua, referrer, path, utm_source, utm_medium,
-			    utm_campaign, viewport, dpr, theme, tex)
-			 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			    utm_campaign, viewport, dpr, theme, tex, why)
+			 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		)
 			.bind(
 				new Date().toISOString(),
@@ -115,6 +123,7 @@ async function recordVisit(request: Request, env: Env, q: URLSearchParams): Prom
 				q.get('d'),
 				q.get('t'),
 				q.get('tex') === '1' ? 1 : 0,
+				why(q.get('x')),
 			)
 			.run();
 	} catch {

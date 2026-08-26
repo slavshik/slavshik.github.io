@@ -25,8 +25,11 @@ contains only source: `dist/` is never committed.
 - `public/` — `CNAME`, `robots.txt`, `sitemap.xml`, `favicon.svg`, `og.png`.
   Copied verbatim into the build. **`CNAME` leaving `public/` takes the domain
   down**, so treat that file as load-bearing.
-- `test/unit/` — Vitest over the physics. `test/e2e/` — Playwright screenshots
-  at three viewports, with baselines committed in `__screenshots__/`.
+- `test/unit/` — Vitest over the physics and over the visit query string.
+  `test/e2e/` — Playwright screenshots at three viewports, with baselines
+  committed in `__screenshots__/`. `test/size.mjs` and `test/syntax.mjs` are
+  the two checks over `dist/`: what it weighs, and whether it parses in the
+  oldest browser we promise.
 - `docs/adr/` — why this repo looks the way it does. Read before changing the
   build, the deployment or the module boundaries.
 
@@ -42,10 +45,17 @@ contains only source: `dist/` is never committed.
   glitches, daytime accent, one frame and no rAF loop, then `data-tv="ready"`
   on `<html>`. The page without the television is now reached by emulating
   reduced motion, which is what the `page.png` baseline does.
+- **A television that does not appear says why.** Whichever condition turned
+  it away rides along with the visit as `x=` — `dom`, `rm`, `net`, `mem`,
+  `gl` — and a chunk that fails to load or throws on mount reports itself
+  afterwards as `x=err`, landing in the `why` column of `visits`. Without it a
+  browser where the television is broken looks exactly like one where it was
+  politely declined. `x=err` rows are reports, not visits: exclude them when
+  counting.
 - **`make check` before calling anything done** (types, lint, format), plus
   `make unit` for anything under `src/tv/`. Run `make test` — which adds
-  `make e2e` and `make size` — when a change could plausibly move a pixel or
-  the byte count.
+  `make e2e`, `make size` and `make syntax` — when a change could plausibly
+  move a pixel or the byte count.
 - **Screenshot baselines are exact.** The tolerance is zero pixels, and the
   tests only run inside the pinned Playwright container (`make e2e`), because
   macOS and CI Linux render differently. If a snapshot diff appears, it is a
@@ -56,6 +66,14 @@ contains only source: `dist/` is never committed.
   by hand and its comments sit next to what they explain.
 - **Commit messages are in Russian**, in the imperative mood, no prefixes and
   no trailing period — see `git log`. So is `README.md`. Keep both that way.
+- **Safari 16 is the floor, and it is a syntax problem, not an API one.**
+  `build.target` in `vite.config.ts` names a browser next to the year because
+  a year is not a browser: three declares its classes with `static {}`, WebKit
+  only learned that in 16.4, and on iOS 16.3 the whole television chunk failed
+  to parse — `import()` rejected, the `.catch()` swallowed it, the page stayed
+  whole and said nothing. `make syntax` is what notices; it states the promise
+  independently of how the build keeps it, so loosening the build fails the
+  check rather than someone's phone.
 - **Keep the payload honest.** The page without the television is what every
   visitor pays for; `make size` holds it under 10 kB gzip and stops the TV
   chunk from growing more than 10% unnoticed. Adding a dependency to `src/`

@@ -52,6 +52,9 @@ jobs:
             - name: бюджет веса
               run: node test/size.mjs
 
+            - name: синтаксис для старых браузеров
+              run: node test/syntax.mjs
+
             - name: артефакт для публикации
               if: github.ref == 'refs/heads/main' && github.event_name == 'push'
               uses: actions/upload-pages-artifact@v3
