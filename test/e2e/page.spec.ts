@@ -65,9 +65,13 @@ test.describe('страница', () => {
 		const hrefs = await page
 			.locator('nav a')
 			.evaluateAll((els) => els.map((e) => (e as HTMLAnchorElement).href));
+		// CV лежит на своём же домене, и ссылка на него относительная —
+		// проверяем её разрешённой, чтобы «/cv» не уехало однажды на чужой хост.
+		const origin = new URL(page.url()).origin;
 		expect(hrefs).toEqual([
 			'https://github.com/slavshik',
 			'https://www.linkedin.com/in/slavshik',
+			`${origin}/cv`,
 			'https://instagram.com/slavshik',
 			'mailto:slavshik@me.com',
 		]);
