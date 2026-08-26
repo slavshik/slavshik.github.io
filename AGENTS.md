@@ -63,7 +63,11 @@ contains only source: `dist/` is never committed.
 - **The pre-paint script in `index.html` stays inline and hand-written.** It
   sets `data-theme` before first paint; bundle it and dark mode flashes light.
 - **Prettier does not touch HTML** (`.prettierignore`). The markup is aligned
-  by hand and its comments sit next to what they explain.
+  by hand and its comments sit next to what they explain — and a build plugin
+  strips those comments out of `dist/`. They are Russian, two bytes a letter,
+  and they were 1.35 kB gzipped: forty per cent of the page, more than its JS
+  and CSS together. Indentation stays; collapsing it buys 78 bytes and costs a
+  readable build.
 - **Commit messages are in Russian**, in the imperative mood, no prefixes and
   no trailing period — see `git log`. So is `README.md`. Keep both that way.
 - **Safari 16 is the floor, and it is a syntax problem, not an API one.**
@@ -75,8 +79,9 @@ contains only source: `dist/` is never committed.
   independently of how the build keeps it, so loosening the build fails the
   check rather than someone's phone.
 - **Keep the payload honest.** The page without the television is what every
-  visitor pays for; `make size` holds it under 10 kB gzip and stops the TV
-  chunk from growing more than 10% unnoticed. Adding a dependency to `src/`
+  visitor pays for; `make size` holds it under 10 kB gzip — markup included,
+  which is how the comments were caught — and stops the TV chunk from growing
+  more than 10% unnoticed. Adding a dependency to `src/`
   needs a reason.
 - The page must stay fully usable with JavaScript off: no television, no theme
   button (it is `hidden` in the markup and JS reveals it), daytime

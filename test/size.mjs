@@ -2,7 +2,10 @@
  * Бюджет веса. Проверяет ровно две вещи:
  *
  *   — страница БЕЗ телевизора должна быть крошечной. Её скачивает каждый, и
- *     это тот вес, который имеет смысл держать в узде;
+ *     это тот вес, который имеет смысл держать в узде. Считается вместе с
+ *     разметкой: index.html дольше всех не попадал в бюджет и однажды
+ *     оказался тяжелее всего JS с CSS вместе взятых — сплошь на
+ *     комментариях, которые с тех пор в dist не уезжают;
  *   — кусок с телевизором меряется и не должен неожиданно распухать. Его
  *     размер задаёт three, а не мы, поэтому потолка в килобайтах нет — есть
  *     запрет на рост больше чем на 10% от записанного.
@@ -17,7 +20,7 @@ import { join } from 'node:path';
 
 const DIST = 'dist';
 const BUDGET_FILE = 'test/size-budget.json';
-const PAGE_LIMIT = 10 * 1024; // страница без телевизора, gzip, JS + CSS
+const PAGE_LIMIT = 10 * 1024; // страница без телевизора, gzip, HTML + JS + CSS
 const TV_GROWTH = 1.1; // насколько куску с телевизором позволено вырасти
 
 const gz = (file) => gzipSync(readFileSync(file), { level: 9 }).length;
@@ -37,7 +40,9 @@ if (!tvAsset) {
 	process.exit(1);
 }
 
-const page = pageAssets.reduce((sum, f) => sum + gz(join(DIST, 'assets', f)), 0);
+const page =
+	gz(join(DIST, 'index.html')) +
+	pageAssets.reduce((sum, f) => sum + gz(join(DIST, 'assets', f)), 0);
 const tv = gz(join(DIST, 'assets', tvAsset));
 
 if (process.argv.includes('--update')) {
@@ -57,7 +62,7 @@ const check = (name, value, limit) => {
 };
 
 console.log('вес, gzip:');
-check(`страница без телевизора (${pageAssets.join(', ')})`, page, PAGE_LIMIT);
+check(`страница без телевизора (index.html, ${pageAssets.join(', ')})`, page, PAGE_LIMIT);
 check(`кусок с телевизором (${tvAsset})`, tv, tvLimit);
 
 if (failed) {
