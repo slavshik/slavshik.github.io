@@ -69,9 +69,9 @@ test.describe('страница', () => {
 		// проверяем её разрешённой, чтобы «/cv» не уехало однажды на чужой хост.
 		const origin = new URL(page.url()).origin;
 		expect(hrefs).toEqual([
-			'https://github.com/slavshik',
 			'https://www.linkedin.com/in/slavshik',
 			`${origin}/cv`,
+			'https://github.com/slavshik',
 			'https://instagram.com/slavshik',
 			'mailto:slavshik@me.com',
 		]);
