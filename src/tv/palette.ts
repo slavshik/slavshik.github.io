@@ -4,6 +4,8 @@
  * Модуль знает про DOM, но не про three: возвращает строки цветов.
  */
 
+import { LOOK } from './look.js';
+
 export interface Palette {
 	dark: boolean;
 	accent: string;
@@ -41,16 +43,18 @@ export function pageDark(): boolean {
 
 export function readPalette(forceDark: boolean | null | undefined): Palette {
 	const dark = forceDark === null || forceDark === undefined ? pageDark() : !!forceDark;
+	const m = LOOK.materials;
 	return {
 		dark,
 		accent: cssVar('--accent', '#2f6b57'),
 		paper: cssVar('--paper', dark ? '#101014' : '#f4f1ec'),
-		shell: '#e8543a', // тёплый красно-оранжевый
-		bezel: '#f6ead3', // сливочная рамка
-		knob: '#322f38', // почти чёрный
-		steel: '#b6bcc3', // телескопические колена антенн и шарики
-		metal: '#c08b2a', // латунные штыри вилки
-		cord: '#322f38',
-		plug: '#2a2830', // чёрный корпус вилки
+		// Сами цвета корпуса живут в спеке облика — там их и тюнят.
+		shell: m.shell.color,
+		bezel: m.bezel.color,
+		knob: m.knob.color,
+		steel: m.steel.color,
+		metal: m.metal.color,
+		cord: m.cord.color,
+		plug: m.plug.color,
 	};
 }

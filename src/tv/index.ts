@@ -35,6 +35,8 @@ import {
 } from './constants.js';
 import { createInput } from './input.js';
 import { createLayout } from './layout.js';
+import { createLighting } from './lighting.js';
+import { LOOK } from './look.js';
 import { readPalette, type Palette } from './palette.js';
 import {
 	Rope,
@@ -114,16 +116,7 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 	const camera = new THREE.PerspectiveCamera(FOV, 1, 0.1, 20);
 	camera.position.set(0, 0, CAM_DIST);
 
-	const hemi = new THREE.HemisphereLight(
-		new THREE.Color(pal.paper),
-		0x1a1720,
-		pal.dark ? 1.5 : 2.2,
-	);
-	const key = new THREE.DirectionalLight(0xffffff, pal.dark ? 1.6 : 2.0);
-	key.position.set(-1.6, 2.0, 2.4);
-	const fill = new THREE.DirectionalLight(new THREE.Color(pal.accent), 0.35);
-	fill.position.set(2.0, -0.6, 0.8);
-	scene.add(hemi, key, fill);
+	const lighting = createLighting(scene, renderer, pal, LOOK.lights);
 
 	const rig = new THREE.Group();
 	scene.add(rig);
@@ -386,10 +379,7 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 		// Свет, а не светофильтр: чистый акцент в аддитивном пятне читается
 		// цветной плёнкой поверх стекла, поэтому он разбавлен белым.
 		tv.glowMat.color.copy(accent).lerp(new THREE.Color(0xffffff), 0.5);
-		fill.color.copy(accent);
-		hemi.color.set(pal.paper);
-		hemi.intensity = pal.dark ? 1.5 : 2.2;
-		key.intensity = pal.dark ? 1.6 : 2.0;
+		lighting.refresh(pal);
 		tv.body.traverse((o) => {
 			const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
 			if (!(o as THREE.Mesh).isMesh || !m || !m.color) return;
@@ -589,6 +579,7 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 		themeMo.disconnect();
 		renderer.domElement.removeEventListener('webglcontextlost', onContextLost);
 		for (const d of tv.disposables) d.dispose();
+		lighting.dispose();
 		tv.ropeGeo.dispose();
 		shadow.geometry.dispose();
 		shadowMat.dispose();
