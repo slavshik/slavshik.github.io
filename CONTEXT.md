@@ -80,6 +80,12 @@ The set of colours the Television takes from the page, so that the object
 agrees with the Theme and the Accent instead of carrying its own colours.
 _Avoid_: colours, theme colours, material colours
 
+**Look**:
+The Television's shape, materials and lighting — everything about how it looks,
+as opposed to how it behaves. Lives as numbers in one spec, which the cabinet
+and the lights are built from.
+_Avoid_: style, appearance, design, geometry, the mesh
+
 **Snow**:
 The white noise on the Television's screen. The screen shows nothing else.
 _Avoid_: static, noise, signal, picture
@@ -100,3 +106,8 @@ The workbench page for the Television: every constant exposed as a control,
 with telemetry. Always drives the same Television source the site does, never
 a copy.
 _Avoid_: playground, sandbox, demo, workbench
+
+**Look Lab**:
+The Lab for the Look. Does not mount the Television — no physics, no input, no
+broadcast — so the Television can be orbited and its Look tuned on its own.
+_Avoid_: model viewer, 3D editor, preview

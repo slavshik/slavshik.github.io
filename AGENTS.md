@@ -13,13 +13,22 @@ contains only source: `dist/` is never committed.
 - `src/main.ts` — page logic: time-of-day accent, theme button, the lazy
   television bootstrap.
 - `src/styles.css` — the whole design.
-- `src/tv/` — the CRT television, eight modules. `index.ts` exports `mount()`;
-  `physics.ts`, `palette.ts`, `constants.ts` and `shaders.ts` contain no three
+- `src/tv/` — the CRT television, eleven modules. `index.ts` exports `mount()`;
+  `physics.ts`, `constants.ts`, `look.ts` and `shaders.ts` contain no three
   and no WebGL, which is what makes the physics unit-testable. `lab.ts` is the
   workbench control surface and must stay out of the production chunk.
+- **The look is a spec, not literals.** `src/tv/look.ts` holds every number
+  about shape, materials and light; `cabinet.ts` builds the body from it and
+  `lighting.ts` the lights. Tune in the Look Lab, then paste the numbers back
+  here — never hand-edit a constructor call. Body dimensions are seeded from
+  `constants.ts`, where physics and the raycast proxy also read them: if the
+  cabinet changes size, that file changes first.
 - `lab/tv.html` — the television workbench: sliders over every physics
   constant, telemetry, theme and accent switching. Imports the same `src/tv/`
   as production; it never keeps its own copy of the code.
+- `lab/look.html` — the Look Lab: orbit the television, tune shape, materials
+  and light, copy the spec back out as JSON, export GLB or USDZ. Does not call
+  `mount()` — no physics, no input, no broadcast.
 - `lab/og.html` — the source for `og.png` (1200×630). Regenerated with
   `make og`.
 - `public/` — `CNAME`, `robots.txt`, `sitemap.xml`, `favicon.svg`, `og.png`.
@@ -52,6 +61,13 @@ contains only source: `dist/` is never committed.
   browser where the television is broken looks exactly like one where it was
   politely declined. `x=err` rows are reports, not visits: exclude them when
   counting.
+- **Tune the look in the Look Lab, not in the source.** `make dev`, then
+  `make look` — or `make lan`, which prints a LAN address so the same page
+  opens on a phone or tablet. The Lab also ships to Pages at
+  `/lab/look.html` (noindex, like every Lab), so tuning needs no laptop.
+  Finished? The «JSON» button copies the whole spec; paste the changed
+  numbers into `src/tv/look.ts` and re-run `make e2e`, which will show the
+  new look as a baseline diff — look at it, then `make e2e-update`.
 - **`make check` before calling anything done** (types, lint, format), plus
   `make unit` for anything under `src/tv/`. Run `make test` — which adds
   `make e2e`, `make size` and `make syntax` — when a change could plausibly
