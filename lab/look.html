@@ -1,0 +1,660 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Стенд — облик</title>
+
+  <!-- Стенд облика: голая сцена без физики, ввода и вещания. Модель крутится
+       орбитой, каждое число спеки — ползунком. Результат тюнинга уезжает
+       кнопкой «JSON» обратно в src/tv/look.ts. -->
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+
+    :root {
+      --paper:  #f4f1ec; --ink: #16151a; --muted: #6f6a63;
+      --faint:  #a9a29a; --hair: #d8d2c8; --accent: #2f6b57;
+      --mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    /* Класс на html, а не на body: палитра читает переменные с корня */
+    html.dark {
+      --paper: #101014; --ink: #ece7de; --muted: #8a8378;
+      --faint: #5d574f; --hair: #2a2830;
+    }
+
+    body {
+      background: var(--paper);
+      color: var(--ink);
+      font-family: var(--mono);
+      font-size: 12px;
+      min-height: 100svh;
+      overflow: hidden;
+    }
+
+    #stage { position: fixed; inset: 0; }
+    /* Без этого страница скроллится и зумится вместо орбиты */
+    #stage canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+
+    #panel {
+      position: fixed;
+      top: 0; right: 0; bottom: 0;
+      width: 21rem;
+      max-width: 88vw;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      background: color-mix(in srgb, var(--paper) 88%, transparent);
+      backdrop-filter: blur(6px);
+      border-left: 1px solid var(--hair);
+      padding: 0.75rem 0.9rem 3rem;
+    }
+    #panel.hidden { display: none; }
+
+    #toggle {
+      position: fixed;
+      top: 0.6rem; right: 0.6rem;
+      z-index: 2;
+      font: inherit;
+      padding: 0.45rem 0.7rem;
+      background: var(--paper);
+      color: var(--ink);
+      border: 1px solid var(--hair);
+      border-radius: 4px;
+    }
+
+    h2 {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin: 1.1rem 0 0.35rem;
+      border-bottom: 1px solid var(--hair);
+      padding-bottom: 0.2rem;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 7.5rem 1fr 3.2rem;
+      align-items: center;
+      gap: 0.5rem;
+      margin: 0.12rem 0;
+    }
+    .row label { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .row output { text-align: right; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+    /* Ползунки крупные — тюнить пальцем на планшете */
+    input[type=range] { width: 100%; height: 28px; margin: 0; accent-color: var(--accent); }
+    input[type=color] { width: 100%; height: 26px; padding: 0; border: 1px solid var(--hair); border-radius: 4px; background: none; }
+    select, button.act { font: inherit; }
+    select { width: 100%; height: 26px; background: var(--paper); color: var(--ink); border: 1px solid var(--hair); border-radius: 4px; }
+
+    .checks { display: flex; flex-wrap: wrap; gap: 0.3rem 0.9rem; margin: 0.4rem 0; }
+    .checks label { display: inline-flex; align-items: center; gap: 0.3rem; color: var(--muted); }
+    .checks input { width: 18px; height: 18px; accent-color: var(--accent); }
+
+    .accents { display: flex; gap: 0.4rem; margin: 0.4rem 0; }
+    .accents button {
+      flex: 1; height: 26px;
+      border: 1px solid var(--hair); border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.8rem; }
+    .actions button {
+      font: inherit;
+      padding: 0.45rem 0.7rem;
+      background: var(--paper);
+      color: var(--ink);
+      border: 1px solid var(--hair);
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    #hud {
+      position: fixed;
+      left: 0.6rem; top: 0.6rem;
+      color: var(--muted);
+      white-space: pre;
+      pointer-events: none;
+    }
+
+    #err {
+      position: fixed;
+      left: 0.6rem; bottom: 0.6rem;
+      max-width: 40rem;
+      color: #b04a3a;
+      white-space: pre-wrap;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="stage"></div>
+  <div id="hud"></div>
+  <button id="toggle">пульт</button>
+  <div id="panel"></div>
+  <div id="err"></div>
+
+  <script type="module">
+    import * as THREE from 'three';
+
+    import { CAM_DIST, FOV } from '/src/tv/constants.ts';
+    import { LOOK } from '/src/tv/look.ts';
+    import { buildCabinet, buildMaterials } from '/src/tv/cabinet.ts';
+    import { createLighting } from '/src/tv/lighting.ts';
+    import { readPalette } from '/src/tv/palette.ts';
+
+    const err = document.getElementById('err');
+    addEventListener('error', (e) => { err.textContent += `${e.message}\n`; });
+    addEventListener('unhandledrejection', (e) => { err.textContent += `${e.reason}\n`; });
+
+    /* ── Спека: живая копия, «сбросить» возвращает к LOOK ─────────────── */
+
+    let spec = structuredClone(LOOK);
+    const ROLES = Object.keys(LOOK.materials);
+
+    let dark = matchMedia('(prefers-color-scheme: dark)').matches;
+    document.documentElement.classList.toggle('dark', dark);
+
+    // Палитра страницы, но цвета корпуса — из живой спеки, а не из LOOK
+    function palette() {
+      const p = readPalette(dark);
+      for (const role of ROLES) p[role] = spec.materials[role].color;
+      return p;
+    }
+
+    /* ── Сцена ──────────────────────────────────────────────────────────── */
+
+    const stage = document.getElementById('stage');
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+    stage.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(FOV, 1, 0.1, 20);
+    camera.position.set(0, 0, CAM_DIST);
+
+    /* Орбита своими руками, а не OrbitControls. Стенду нужны две дуги и
+       дальность — полсотни строк, зато щипок и протяжка ведут себя ровно так,
+       как задумано на планшете, и аддон в графе сборки не участвует. */
+    const orbit = { yaw: 0, pitch: 0, dist: CAM_DIST };
+    const pointers = new Map();
+    let pinch = 0;
+
+    function applyCamera() {
+      orbit.pitch = Math.max(-1.4, Math.min(1.4, orbit.pitch));
+      orbit.dist = Math.max(1.2, Math.min(8, orbit.dist));
+      const cp = Math.cos(orbit.pitch);
+      camera.position.set(
+        Math.sin(orbit.yaw) * cp * orbit.dist,
+        Math.sin(orbit.pitch) * orbit.dist,
+        Math.cos(orbit.yaw) * cp * orbit.dist,
+      );
+      camera.lookAt(0, 0, 0);
+    }
+
+    const canvas = renderer.domElement;
+    canvas.addEventListener('pointerdown', (e) => {
+      canvas.setPointerCapture(e.pointerId);
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      pinch = 0;
+    });
+    canvas.addEventListener('pointermove', (e) => {
+      const prev = pointers.get(e.pointerId);
+      if (!prev) return;
+      const dx = e.clientX - prev.x;
+      const dy = e.clientY - prev.y;
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+      if (pointers.size === 1) {
+        orbit.yaw -= dx * 0.006;
+        orbit.pitch += dy * 0.006;
+      } else if (pointers.size === 2) {
+        // Щипок: дальность правит расстояние между пальцами, а не их сдвиг
+        const [a, b] = [...pointers.values()];
+        const d = Math.hypot(a.x - b.x, a.y - b.y);
+        if (pinch) orbit.dist *= pinch / d;
+        pinch = d;
+      }
+      applyCamera();
+    });
+    const drop = (e) => { pointers.delete(e.pointerId); pinch = 0; };
+    canvas.addEventListener('pointerup', drop);
+    canvas.addEventListener('pointercancel', drop);
+    canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      orbit.dist *= 1 + Math.sign(e.deltaY) * 0.08;
+      applyCamera();
+    }, { passive: false });
+
+    applyCamera();
+
+    const pal0 = palette();
+    const lighting = createLighting(scene, renderer, pal0, spec.lights);
+
+    /* Настоящих теней здесь нет, и это не упущение: тюнить ими нечего. На
+       странице телевизор висит над текстом, пола под ним не бывает, и
+       контактная тень рисуется billboard-пятном — карта теней в прод не
+       поедет никогда. Подложка нужна для другого: чтобы силуэт читался не на
+       пустоте. */
+    const backdrop = new THREE.Mesh(
+      new THREE.PlaneGeometry(20, 20),
+      new THREE.MeshStandardMaterial({ color: '#8f8a82', roughness: 1 }),
+    );
+    backdrop.position.z = -3;
+    backdrop.visible = false;
+    scene.add(backdrop);
+
+    const root = new THREE.Group();
+    scene.add(root);
+
+    /* ── Сборка по спеке. Геометрия не мутируется — пересобирается ─────── */
+
+    let mats = null;
+    let cab = null;
+    const view = { wire: false, studio: false };
+
+    function rebuild() {
+      if (cab) {
+        for (const d of cab.disposables) d.dispose();
+        for (const d of mats.disposables) d.dispose();
+        root.clear();
+      }
+      const pal = palette();
+      mats = buildMaterials(pal, spec.materials);
+      cab = buildCabinet(spec.shape, mats, pal.accent);
+      // Розжига здесь нет: экран сразу включён и шумит
+      cab.screen.scale.y = 1;
+      cab.screenMat.uniforms.uIntensity.value = 1;
+      cab.glow.intensity = 0.5;
+      cab.glowMat.opacity = 0.12;
+      root.add(cab.tilt);
+      applyView();
+    }
+
+    function applyView() {
+      backdrop.visible = view.studio;
+      for (const m of Object.values(mats.roles)) m.wireframe = view.wire;
+    }
+
+    function relight() {
+      lighting.apply(spec.lights);
+      lighting.refresh(palette());
+    }
+
+    /* ── Панель: ползунки рождаются из схемы, а не верстаются руками ────
+       Формат строки: [подпись, путь, min, max, шаг?] — ползунок;
+       ['#', подпись, путь] — цвет; ['=', подпись, путь, варианты] — выбор. */
+
+    const GROUPS = [
+      ['корпус', [
+        ['ширина', 'shape.body.w', 0.5, 1.8],
+        ['высота', 'shape.body.h', 0.4, 1.5],
+        ['глубина', 'shape.body.d', 0.3, 1.4],
+        ['скругление', 'shape.body.round', 0.01, 0.3],
+        ['сегменты', 'shape.body.roundSegs', 1, 16, 1],
+        ['сужение', 'shape.taper.min', 0.5, 1],
+        ['суж. от', 'shape.taper.start', -1, 0.5],
+        ['суж. до', 'shape.taper.end', -0.5, 1],
+        ['наклон X', 'shape.tilt.x', -0.6, 0.6],
+        ['разворот Y', 'shape.tilt.y', -1.5, 1.5],
+      ]],
+      ['рамка', [
+        ['ширина', 'shape.bezel.w', 0.4, 1.1],
+        ['высота', 'shape.bezel.h', 0.3, 0.85],
+        ['радиус', 'shape.bezel.r', 0.02, 0.3],
+        ['окно шир.', 'shape.bezel.holeW', 0.3, 1.0],
+        ['окно выс.', 'shape.bezel.holeH', 0.2, 0.8],
+        ['окно рад.', 'shape.bezel.holeR', 0.02, 0.25],
+        ['толщина', 'shape.bezel.depth', 0.01, 0.2],
+        ['фаска', 'shape.bezel.bevel', 0.001, 0.05],
+        ['глубина Z', 'shape.bezel.z', 0.2, 0.6],
+      ]],
+      ['стекло', [
+        ['ширина', 'shape.screen.w', 0.3, 1.0],
+        ['высота', 'shape.screen.h', 0.2, 0.8],
+        ['купол', 'shape.screen.bulge', 0, 0.4],
+        ['крутизна', 'shape.screen.power', 0.2, 2],
+        ['глубина Z', 'shape.screen.z', 0.2, 0.6],
+      ]],
+      ['свечение', [
+        ['лампа Z', 'shape.glow.z', 0.3, 1],
+        ['лампа радиус', 'shape.glow.dist', 0.2, 3],
+        ['лампа спад', 'shape.glow.decay', 0, 4],
+        ['пятно шир.', 'shape.halo.w', 0.5, 2.5],
+        ['пятно выс.', 'shape.halo.h', 0.3, 2],
+        ['пятно Z', 'shape.halo.z', 0.3, 0.8],
+      ]],
+      ['блюдце и винт', [
+        ['радиус', 'shape.dish.r', 0.05, 0.35],
+        ['сплюснутость', 'shape.dish.squash', 0.1, 1],
+        ['сдвиг Z', 'shape.dish.z', -0.4, 0.3],
+        ['утоп', 'shape.dish.sink', 0, 0.05],
+        ['винт верх', 'shape.screw.rTop', 0.005, 0.05],
+        ['винт низ', 'shape.screw.rBot', 0.005, 0.06],
+        ['винт высота', 'shape.screw.h', 0.01, 0.12],
+      ]],
+      ['антенны', [
+        ['шарниры врозь', 'shape.antennas.pivotX', 0, 0.2],
+        ['шарниры вверх', 'shape.antennas.pivotLift', 0, 0.2],
+        ['лев. длина', 'shape.antennas.arms.0.len', 0.2, 1],
+        ['лев. развал', 'shape.antennas.arms.0.splay', 0, 0.5],
+        ['лев. назад', 'shape.antennas.arms.0.back', -0.4, 0.2],
+        ['прав. длина', 'shape.antennas.arms.1.len', 0.2, 1],
+        ['прав. развал', 'shape.antennas.arms.1.splay', 0, 0.5],
+        ['прав. назад', 'shape.antennas.arms.1.back', -0.4, 0.2],
+        ['низ радиус', 'shape.antennas.segR.0', 0.005, 0.04],
+        ['середина рад.', 'shape.antennas.segR.1', 0.005, 0.04],
+        ['верх радиус', 'shape.antennas.segR.2', 0.005, 0.04],
+        ['конус звена', 'shape.antennas.segTop', 0.5, 1],
+        ['обжимка', 'shape.antennas.crimpK', 1, 2.5],
+        ['шарик', 'shape.antennas.tipR', 0.01, 0.06],
+      ]],
+      ['ножки', [
+        ['верх радиус', 'shape.feet.rTop', 0.01, 0.08],
+        ['низ радиус', 'shape.feet.rBot', 0.01, 0.08],
+        ['высота', 'shape.feet.h', 0.01, 0.12],
+        ['врозь X', 'shape.feet.x', 0.1, 0.6],
+        ['врозь Z', 'shape.feet.z', 0, 0.45],
+        ['утоп', 'shape.feet.lift', 0, 0.04],
+      ]],
+      ['свет', [
+        ['ключ день', 'lights.key.day', 0, 5],
+        ['ключ ночь', 'lights.key.night', 0, 5],
+        ['#', 'ключ цвет', 'lights.key.color'],
+        ['ключ X', 'lights.key.pos.0', -4, 4],
+        ['ключ Y', 'lights.key.pos.1', -4, 4],
+        ['ключ Z', 'lights.key.pos.2', -4, 4],
+        ['небо день', 'lights.hemi.day', 0, 5],
+        ['небо ночь', 'lights.hemi.night', 0, 5],
+        ['#', 'земля цвет', 'lights.hemi.ground'],
+        ['заливка', 'lights.fill.intensity', 0, 2],
+        ['заливка X', 'lights.fill.pos.0', -4, 4],
+        ['заливка Y', 'lights.fill.pos.1', -4, 4],
+        ['заливка Z', 'lights.fill.pos.2', -4, 4],
+        ['контровой', 'lights.rim.intensity', 0, 5],
+        ['#', 'контровой цвет', 'lights.rim.color'],
+        ['контровой X', 'lights.rim.pos.0', -4, 4],
+        ['контровой Y', 'lights.rim.pos.1', -4, 4],
+        ['контровой Z', 'lights.rim.pos.2', -4, 4],
+        ['среда', 'lights.env.intensity', 0, 3],
+        ['#', 'среда верх', 'lights.env.top'],
+        ['#', 'среда низ', 'lights.env.bottom'],
+        ['экспозиция', 'lights.exposure', 0.2, 3],
+        ['=', 'тонмаппинг', 'lights.toneMapping', ['none', 'aces', 'agx', 'neutral']],
+      ]],
+    ];
+
+    // Материалы — одной строкой на роль в схеме не выйдет, генерируем группу
+    const matRows = [];
+    for (const role of ROLES) {
+      matRows.push(['#', role, `materials.${role}.color`]);
+      matRows.push([`${role} шерох.`, `materials.${role}.roughness`, 0, 1]);
+      matRows.push([`${role} металл`, `materials.${role}.metalness`, 0, 1]);
+    }
+    GROUPS.push(['материалы', matRows]);
+
+    const get = (path) => path.split('.').reduce((o, k) => o[k], spec);
+    const set = (path, v) => {
+      const ks = path.split('.');
+      const last = ks.pop();
+      ks.reduce((o, k) => o[k], spec)[last] = v;
+    };
+
+    // Свет применяется вживую, всё остальное — пересборкой корпуса.
+    // Пересборка занимает миллисекунды, зато путь ровно тот же, каким числа
+    // поедут в прод: спека → buildCabinet.
+    let dirty = false;
+    function changed(path) {
+      if (path.startsWith('lights.')) { relight(); return; }
+      dirty = true;
+    }
+
+    const panel = document.getElementById('panel');
+    const inputs = []; // [path, элемент, output?]
+
+    function addRows(rows) {
+      for (const row of rows) {
+        const div = document.createElement('div');
+        div.className = 'row';
+        const label = document.createElement('label');
+        if (row[0] === '#') {
+          label.textContent = row[1];
+          const inp = document.createElement('input');
+          inp.type = 'color';
+          inp.value = get(row[2]);
+          inp.addEventListener('input', () => { set(row[2], inp.value); changed(row[2]); });
+          div.append(label, inp, document.createElement('span'));
+          inputs.push([row[2], inp, null]);
+        } else if (row[0] === '=') {
+          label.textContent = row[1];
+          const sel = document.createElement('select');
+          for (const opt of row[3]) {
+            const o = document.createElement('option');
+            o.value = o.textContent = opt;
+            sel.append(o);
+          }
+          sel.value = get(row[2]);
+          sel.addEventListener('input', () => { set(row[2], sel.value); changed(row[2]); });
+          div.append(label, sel, document.createElement('span'));
+          inputs.push([row[2], sel, null]);
+        } else {
+          const [name, path, min, max, step] = row;
+          label.textContent = name;
+          const inp = document.createElement('input');
+          inp.type = 'range';
+          inp.min = min;
+          inp.max = max;
+          inp.step = step ?? (max - min) / 400;
+          inp.value = get(path);
+          const out = document.createElement('output');
+          out.textContent = (+get(path)).toFixed(3);
+          inp.addEventListener('input', () => {
+            const v = parseFloat(inp.value);
+            set(path, step === 1 ? Math.round(v) : v);
+            out.textContent = v.toFixed(3);
+            changed(path);
+          });
+          div.append(label, inp, out);
+          inputs.push([path, inp, out]);
+        }
+        panel.append(div);
+      }
+    }
+
+    function syncInputs() {
+      for (const [path, el, out] of inputs) {
+        el.value = get(path);
+        if (out) out.textContent = (+get(path)).toFixed(3);
+      }
+    }
+
+    /* ── Вид и действия ─────────────────────────────────────────────────── */
+
+    {
+      const h = document.createElement('h2');
+      h.textContent = 'вид';
+      panel.append(h);
+
+      const checks = document.createElement('div');
+      checks.className = 'checks';
+      const mkCheck = (name, fn, on = false) => {
+        const l = document.createElement('label');
+        const c = document.createElement('input');
+        c.type = 'checkbox';
+        c.checked = on;
+        c.addEventListener('input', () => fn(c.checked));
+        l.append(c, name);
+        checks.append(l);
+      };
+      // Стенд стартует в системной теме, как и страница, — галка обязана это
+      // показывать, иначе она врёт с первой секунды.
+      mkCheck('тёмная', (v) => {
+        dark = v;
+        document.documentElement.classList.toggle('dark', v);
+        relight();
+        rebuild();
+      }, dark);
+      mkCheck('подложка', (v) => { view.studio = v; applyView(); });
+      mkCheck('сетка', (v) => { view.wire = v; applyView(); });
+      panel.append(checks);
+
+      // Четыре фазы акцента — те же, что на странице и в стенде физики
+      const accents = document.createElement('div');
+      accents.className = 'accents';
+      for (const [name, color] of [
+        ['рассвет', '#c2643f'], ['день', '#2f6b57'],
+        ['закат', '#b07d2b'], ['ночь', '#6f86c9'],
+      ]) {
+        const b = document.createElement('button');
+        b.style.background = color;
+        b.title = name;
+        b.addEventListener('click', () => {
+          document.documentElement.style.setProperty('--accent', color);
+          relight();
+          rebuild();
+        });
+        accents.append(b);
+      }
+      panel.append(accents);
+    }
+
+    for (const [title, rows] of GROUPS) {
+      const h = document.createElement('h2');
+      h.textContent = title;
+      panel.append(h);
+      addRows(rows);
+    }
+
+    {
+      const actions = document.createElement('div');
+      actions.className = 'actions';
+      const mkBtn = (name, fn) => {
+        const b = document.createElement('button');
+        b.textContent = name;
+        b.addEventListener('click', fn);
+        actions.append(b);
+      };
+
+      mkBtn('сбросить', () => {
+        spec = structuredClone(LOOK);
+        syncInputs();
+        relight();
+        rebuild();
+      });
+
+      mkBtn('JSON', async () => {
+        const text = JSON.stringify(spec, null, '\t');
+        try {
+          await navigator.clipboard.writeText(text);
+        } catch {
+          // Буфер не дали — показываем текстом, скопируется руками
+          prompt('Спека:', text);
+        }
+      });
+
+      mkBtn('снимок', () => {
+        renderer.render(scene, camera);
+        renderer.domElement.toBlob((blob) => {
+          if (blob) download(blob, 'tv-look.png');
+        });
+      });
+
+      // Экспортёры приезжают лениво: в чанке стенда их нет, пока не попросят
+      mkBtn('GLB', async () => {
+        const { GLTFExporter } = await import('three/addons/exporters/GLTFExporter.js');
+        const bin = await withExportable(() =>
+          new GLTFExporter().parseAsync(root, { binary: true }));
+        download(new Blob([bin], { type: 'model/gltf-binary' }), 'tv.glb');
+      });
+
+      mkBtn('USDZ', async () => {
+        const { USDZExporter } = await import('three/addons/exporters/USDZExporter.js');
+        const bin = await withExportable(() => new USDZExporter().parseAsync(root));
+        download(new Blob([bin], { type: 'model/vnd.usdz+zip' }), 'tv.usdz');
+      });
+
+      panel.append(actions);
+    }
+
+    // Экран с шейдером и аддитивное пятно экспортёры не понимают: на время
+    // экспорта экран прикидывается тёмным стеклом, пятно прячется.
+    async function withExportable(fn) {
+      const glassMat = new THREE.MeshStandardMaterial({ color: '#101418', roughness: 0.25 });
+      const prevMat = cab.screen.material;
+      cab.screen.material = glassMat;
+      let halo = null;
+      cab.tilt.traverse((o) => { if (o.isMesh && o.material === cab.glowMat) halo = o; });
+      if (halo) halo.visible = false;
+      try {
+        return await fn();
+      } finally {
+        cab.screen.material = prevMat;
+        if (halo) halo.visible = true;
+        glassMat.dispose();
+      }
+    }
+
+    function download(blob, name) {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+    }
+
+    document.getElementById('toggle').addEventListener('click', () => {
+      panel.classList.toggle('hidden');
+    });
+
+    /* ── Раскладка и цикл ───────────────────────────────────────────────── */
+
+    function resize() {
+      const w = stage.clientWidth;
+      const h = stage.clientHeight;
+      renderer.setSize(w, h);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    }
+    new ResizeObserver(resize).observe(stage);
+    resize();
+
+    const hud = document.getElementById('hud');
+    let frames = 0;
+    let hudAt = performance.now();
+
+    let clock = 0;
+    let last = performance.now();
+    function frame(now) {
+      requestAnimationFrame(frame);
+      const dt = Math.min((now - last) / 1000, 0.25);
+      last = now;
+      clock += dt;
+
+      if (dirty) {
+        dirty = false;
+        rebuild();
+      }
+
+      cab.screenMat.uniforms.uTime.value = clock;
+      renderer.render(scene, camera);
+
+      frames++;
+      if (now - hudAt > 500) {
+        const info = renderer.info.render;
+        hud.textContent =
+          `fps ${Math.round((frames * 1000) / (now - hudAt))}\n` +
+          `calls ${info.calls}  tris ${info.triangles}`;
+        frames = 0;
+        hudAt = now;
+      }
+    }
+
+    rebuild();
+    requestAnimationFrame(frame);
+  </script>
+</body>
+</html>

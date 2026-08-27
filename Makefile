@@ -14,8 +14,8 @@ PW_IMAGE := mcr.microsoft.com/playwright:v1.62.1-noble
 DOCKER   := docker run --rm -v "$(CURDIR)":/repo -v /repo/node_modules -w /repo
 
 .DEFAULT_GOAL := help
-.PHONY: help install dev preview lab og-lab render check test unit e2e e2e-update baselines \
-        size syntax build og sitemap format lint
+.PHONY: help install dev lan preview lab look og-lab render check test unit e2e e2e-update \
+        baselines size syntax build og sitemap format lint
 
 help: ## Показать этот список
 	@grep -hE '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -32,11 +32,20 @@ dev: ## Dev-сервер с горячей перезагрузкой
 	@echo "$(URL) — Ctrl-C чтобы остановить"
 	@npx vite --port $(PORT) --strictPort
 
+lan: ## Dev-сервер, открытый в локальную сеть — тюнить облик с планшета
+	@echo "с этой машины: $(URL)"
+	@ipconfig getifaddr en0 2>/dev/null \
+	  | sed 's|^|  с планшета:  http://|; s|$$|:$(PORT)/lab/look.html|' || true
+	@npx vite --host --port $(PORT) --strictPort
+
 preview: build ## Отдать собранный сайт — ровно то, что уедет на Pages
 	@npx vite preview --port $(PORT) --strictPort
 
 lab: ## Открыть стенд телевизора со всеми ползунками
 	@open $(URL)/lab/tv.html
+
+look: ## Открыть стенд облика: форма, материалы и свет
+	@open $(URL)/lab/look.html
 
 og-lab: ## Открыть исходник карточки превью
 	@open $(URL)/lab/og.html
