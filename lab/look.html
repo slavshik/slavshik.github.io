@@ -113,6 +113,20 @@
       cursor: pointer;
     }
 
+    textarea {
+      width: 100%;
+      height: 12rem;
+      margin-top: 0.5rem;
+      font: inherit;
+      background: var(--paper);
+      color: var(--ink);
+      border: 1px solid var(--hair);
+      border-radius: 4px;
+      padding: 0.4rem;
+    }
+    /* Легло в буфер — рамка зелёная, ничего писать не надо */
+    textarea[data-ok] { border-color: var(--accent); }
+
     #hud {
       position: fixed;
       left: 0.6rem; top: 0.6rem;
@@ -546,13 +560,24 @@
         rebuild();
       });
 
+      // Спека уезжает отсюда в src/tv/look.ts. Поле показывается всегда, а не
+      // только когда буфер не дался: на планшете в Safari разрешение на буфер
+      // капризно, а модалкой тут спрашивать нельзя — prompt() замораживает
+      // страницу вместе с циклом отрисовки.
+      const dump = document.createElement('textarea');
+      dump.readOnly = true;
+      dump.hidden = true;
+
       mkBtn('JSON', async () => {
         const text = JSON.stringify(spec, null, '\t');
+        dump.value = text;
+        dump.hidden = false;
+        dump.select();
         try {
           await navigator.clipboard.writeText(text);
+          dump.dataset.ok = '1';
         } catch {
-          // Буфер не дали — показываем текстом, скопируется руками
-          prompt('Спека:', text);
+          delete dump.dataset.ok;
         }
       });
 
@@ -577,7 +602,7 @@
         download(new Blob([bin], { type: 'model/vnd.usdz+zip' }), 'tv.usdz');
       });
 
-      panel.append(actions);
+      panel.append(actions, dump);
     }
 
     // Экран с шейдером и аддитивное пятно экспортёры не понимают: на время
