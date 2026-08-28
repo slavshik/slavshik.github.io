@@ -38,6 +38,8 @@ export interface Cabinet {
 	/** Сияние стекла: аддитивное пятно перед рамкой. */
 	glowMat: THREE.MeshBasicMaterial;
 	antennas: AntennaPart[];
+	/** Вся антенная надстройка одним узлом: блюдце, винт и оба рожка. */
+	antennaGroup: THREE.Group;
 	disposables: Disposable[];
 }
 
@@ -272,6 +274,12 @@ export function buildCabinet(spec: ShapeSpec, mats: Materials, accent: string): 
 	//
 	// Блюдце стоит НА крышке и чуть ближе к переду: утопленное в корпус или
 	// сдвинутое к затылку, оно с этого ракурса просто не видно.
+	//
+	// Вся надстройка собрана в свою группу без собственного преобразования:
+	// на картинке это ничего не меняет, зато стенд облика гасит её одним
+	// visible, когда нужно смотреть на корпус, а не на рожки.
+	const antennaGroup = new THREE.Group();
+	tilt.add(antennaGroup);
 	const ant = spec.antennas;
 	// Крышка на этой глубине ужата сужением корпуса, и её верх — не h / 2,
 	// а h / 2 * taperAt(dish.z). По номинальной высоте блюдце висело над
@@ -285,7 +293,7 @@ export function buildCabinet(spec: ShapeSpec, mats: Materials, accent: string): 
 	);
 	antBase.scale.set(1, spec.dish.squash, 1);
 	antBase.position.set(0, dishY, spec.dish.z);
-	tilt.add(antBase);
+	antennaGroup.add(antBase);
 
 	// Шарнир — там же, где и был относительно блюдца: у его макушки.
 	const antY = dishY + ant.pivotLift;
@@ -295,7 +303,7 @@ export function buildCabinet(spec: ShapeSpec, mats: Materials, accent: string): 
 		steel,
 	);
 	antScrew.position.set(0, antY + spec.screw.lift, spec.dish.z);
-	tilt.add(antScrew);
+	antennaGroup.add(antScrew);
 
 	// Колена: снизу толстое и короткое, кверху тоньше и длиннее — так выглядит
 	// выдвинутая антенна, у которой секции входят одна в другую.
@@ -336,7 +344,7 @@ export function buildCabinet(spec: ShapeSpec, mats: Materials, accent: string): 
 		armGroup.add(tip);
 
 		pivot.add(armGroup);
-		tilt.add(pivot);
+		antennaGroup.add(pivot);
 		antennas.push({ pivot, a: 0, av: 0, side: arm.side });
 	}
 
@@ -362,5 +370,5 @@ export function buildCabinet(spec: ShapeSpec, mats: Materials, accent: string): 
 		}
 	}
 
-	return { tilt, screen, screenMat, glow, glowMat, antennas, disposables };
+	return { tilt, screen, screenMat, glow, glowMat, antennas, antennaGroup, disposables };
 }

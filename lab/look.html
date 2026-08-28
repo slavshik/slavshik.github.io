@@ -34,7 +34,13 @@
       overflow: hidden;
     }
 
+    /* Сцене — своя область, а не весь экран: панель непрозрачная, и модель,
+       выставленная по центру окна, наполовину уезжала под неё. */
     #stage { position: fixed; inset: 0; }
+    @media (min-width: 40rem) {
+      #stage { right: 21rem; }
+      body.wide #stage { right: 0; }
+    }
     /* Без этого страница скроллится и зумится вместо орбиты */
     #stage canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 
@@ -64,16 +70,29 @@
       border-radius: 4px;
     }
 
-    h2 {
+    h2, summary {
       font-size: 11px;
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.08em;
       color: var(--muted);
-      margin: 1.1rem 0 0.35rem;
       border-bottom: 1px solid var(--hair);
       padding-bottom: 0.2rem;
     }
+    h2 { margin: 1.1rem 0 0.35rem; }
+
+    /* Заголовок раздела — он же кнопка; палец должен попадать не целясь */
+    summary {
+      list-style: none;
+      cursor: pointer;
+      padding-top: 0.65rem;
+      margin-bottom: 0.35rem;
+      user-select: none;
+    }
+    summary::-webkit-details-marker { display: none; }
+    summary::before { content: '▸ '; color: var(--faint); }
+    details[open] > summary { color: var(--ink); }
+    details[open] > summary::before { content: '▾ '; }
 
     .row {
       display: grid;
@@ -83,6 +102,11 @@
       margin: 0.12rem 0;
     }
     .row label { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* Цвет и выбор — без колонки под число, она им не нужна.
+       Строка цвета вдобавок служит заголовком своей пары ползунков. */
+    .row:has(input[type=color]), .row:has(select) { grid-template-columns: 1fr 8rem; }
+    .row:has(input[type=color]) { margin-top: 0.6rem; }
+    .row:has(input[type=color]) label { color: var(--ink); }
     .row output { text-align: right; color: var(--ink); font-variant-numeric: tabular-nums; }
 
     /* Ползунки крупные — тюнить пальцем на планшете */
@@ -197,6 +221,21 @@
     const orbit = { yaw: 0, pitch: 0, dist: CAM_DIST };
     const pointers = new Map();
     let pinch = 0;
+    // Пока дальность не тронули руками, её подбирает fitCamera: на узкой
+    // области боковой кадр обрезал корпус по бортам.
+    let zoomed = false;
+
+    function fitCamera() {
+      if (zoomed) return;
+      const s = spec.shape;
+      const halfW = s.body.w / 2;
+      const halfH = s.body.h / 2 + s.feet.h + (view.antennas ? 0.55 : 0);
+      const aspect = camera.aspect || 1;
+      const t = Math.tan((FOV * Math.PI) / 360);
+      // По высоте и по ширине отдельно — берём то, что не влезает сильнее
+      orbit.dist = 1.35 * Math.max(halfH / t, halfW / (t * aspect));
+      applyCamera();
+    }
 
     function applyCamera() {
       orbit.pitch = Math.max(-1.4, Math.min(1.4, orbit.pitch));
@@ -230,7 +269,10 @@
         // Щипок: дальность правит расстояние между пальцами, а не их сдвиг
         const [a, b] = [...pointers.values()];
         const d = Math.hypot(a.x - b.x, a.y - b.y);
-        if (pinch) orbit.dist *= pinch / d;
+        if (pinch) {
+          orbit.dist *= pinch / d;
+          zoomed = true;
+        }
         pinch = d;
       }
       applyCamera();
@@ -241,6 +283,7 @@
     canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
       orbit.dist *= 1 + Math.sign(e.deltaY) * 0.08;
+      zoomed = true;
       applyCamera();
     }, { passive: false });
 
@@ -269,7 +312,7 @@
 
     let mats = null;
     let cab = null;
-    const view = { wire: false, studio: false };
+    const view = { wire: false, studio: false, antennas: false };
 
     function rebuild() {
       if (cab) {
@@ -287,10 +330,12 @@
       cab.glowMat.opacity = 0.12;
       root.add(cab.tilt);
       applyView();
+      fitCamera();
     }
 
     function applyView() {
       backdrop.visible = view.studio;
+      cab.antennaGroup.visible = view.antennas;
       for (const m of Object.values(mats.roles)) m.wireframe = view.wire;
     }
 
@@ -301,10 +346,14 @@
 
     /* ── Панель: ползунки рождаются из схемы, а не верстаются руками ────
        Формат строки: [подпись, путь, min, max, шаг?] — ползунок;
-       ['#', подпись, путь] — цвет; ['=', подпись, путь, варианты] — выбор. */
+       ['#', подпись, путь] — цвет; ['=', подпись, путь, варианты] — выбор.
+
+       Разделы складные, и открыт по умолчанию только тот, ради которого сюда
+       и приходят: корпус с материалами. Восемь десятков ползунков одним
+       столбцом — это не пульт, а стена, в которой нужное не найти. */
 
     const GROUPS = [
-      ['корпус', [
+      ['корпус', true, [
         ['ширина', 'shape.body.w', 0.5, 1.8],
         ['высота', 'shape.body.h', 0.4, 1.5],
         ['глубина', 'shape.body.d', 0.3, 1.4],
@@ -316,7 +365,7 @@
         ['наклон X', 'shape.tilt.x', -0.6, 0.6],
         ['разворот Y', 'shape.tilt.y', -1.5, 1.5],
       ]],
-      ['рамка', [
+      ['рамка', false, [
         ['ширина', 'shape.bezel.w', 0.4, 1.1],
         ['высота', 'shape.bezel.h', 0.3, 0.85],
         ['радиус', 'shape.bezel.r', 0.02, 0.3],
@@ -327,14 +376,14 @@
         ['фаска', 'shape.bezel.bevel', 0.001, 0.05],
         ['глубина Z', 'shape.bezel.z', 0.2, 0.6],
       ]],
-      ['стекло', [
+      ['стекло', false, [
         ['ширина', 'shape.screen.w', 0.3, 1.0],
         ['высота', 'shape.screen.h', 0.2, 0.8],
         ['купол', 'shape.screen.bulge', 0, 0.4],
         ['крутизна', 'shape.screen.power', 0.2, 2],
         ['глубина Z', 'shape.screen.z', 0.2, 0.6],
       ]],
-      ['свечение', [
+      ['свечение', false, [
         ['лампа Z', 'shape.glow.z', 0.3, 1],
         ['лампа радиус', 'shape.glow.dist', 0.2, 3],
         ['лампа спад', 'shape.glow.decay', 0, 4],
@@ -342,7 +391,7 @@
         ['пятно выс.', 'shape.halo.h', 0.3, 2],
         ['пятно Z', 'shape.halo.z', 0.3, 0.8],
       ]],
-      ['блюдце и винт', [
+      ['блюдце и винт', false, [
         ['радиус', 'shape.dish.r', 0.05, 0.35],
         ['сплюснутость', 'shape.dish.squash', 0.1, 1],
         ['сдвиг Z', 'shape.dish.z', -0.4, 0.3],
@@ -351,7 +400,7 @@
         ['винт низ', 'shape.screw.rBot', 0.005, 0.06],
         ['винт высота', 'shape.screw.h', 0.01, 0.12],
       ]],
-      ['антенны', [
+      ['антенны', false, [
         ['шарниры врозь', 'shape.antennas.pivotX', 0, 0.2],
         ['шарниры вверх', 'shape.antennas.pivotLift', 0, 0.2],
         ['лев. длина', 'shape.antennas.arms.0.len', 0.2, 1],
@@ -367,7 +416,7 @@
         ['обжимка', 'shape.antennas.crimpK', 1, 2.5],
         ['шарик', 'shape.antennas.tipR', 0.01, 0.06],
       ]],
-      ['ножки', [
+      ['ножки', false, [
         ['верх радиус', 'shape.feet.rTop', 0.01, 0.08],
         ['низ радиус', 'shape.feet.rBot', 0.01, 0.08],
         ['высота', 'shape.feet.h', 0.01, 0.12],
@@ -375,7 +424,7 @@
         ['врозь Z', 'shape.feet.z', 0, 0.45],
         ['утоп', 'shape.feet.lift', 0, 0.04],
       ]],
-      ['свет', [
+      ['свет', false, [
         ['ключ день', 'lights.key.day', 0, 5],
         ['ключ ночь', 'lights.key.night', 0, 5],
         ['#', 'ключ цвет', 'lights.key.color'],
@@ -402,14 +451,24 @@
       ]],
     ];
 
-    // Материалы — одной строкой на роль в схеме не выйдет, генерируем группу
+    /* Материалы — первым разделом и раскрытыми: ради них сюда и приходят.
+       Роли только те, что видно на корпусе: cord, plug и metal — это провод и
+       вилка, которых на стенде нет, и ползунки к ним двигали бы ничто. */
+    const MAT_ROLES = {
+      shell: 'корпус',
+      bezel: 'рамка',
+      knob: 'ножки и блюдце',
+      steel: 'металл антенн',
+    };
     const matRows = [];
-    for (const role of ROLES) {
-      matRows.push(['#', role, `materials.${role}.color`]);
-      matRows.push([`${role} шерох.`, `materials.${role}.roughness`, 0, 1]);
-      matRows.push([`${role} металл`, `materials.${role}.metalness`, 0, 1]);
+    for (const [role, name] of Object.entries(MAT_ROLES)) {
+      // Роль названа один раз, над своей парой ползунков: повтор её в каждой
+      // подписи не влезал в колонку и обрезался многоточием.
+      matRows.push(['#', name, `materials.${role}.color`]);
+      matRows.push(['шероховатость', `materials.${role}.roughness`, 0, 1]);
+      matRows.push(['металличность', `materials.${role}.metalness`, 0, 1]);
     }
-    GROUPS.push(['материалы', matRows]);
+    GROUPS.unshift(['материалы', true, matRows]);
 
     const get = (path) => path.split('.').reduce((o, k) => o[k], spec);
     const set = (path, v) => {
@@ -430,7 +489,7 @@
     const panel = document.getElementById('panel');
     const inputs = []; // [path, элемент, output?]
 
-    function addRows(rows) {
+    function addRows(rows, host) {
       for (const row of rows) {
         const div = document.createElement('div');
         div.className = 'row';
@@ -441,7 +500,7 @@
           inp.type = 'color';
           inp.value = get(row[2]);
           inp.addEventListener('input', () => { set(row[2], inp.value); changed(row[2]); });
-          div.append(label, inp, document.createElement('span'));
+          div.append(label, inp);
           inputs.push([row[2], inp, null]);
         } else if (row[0] === '=') {
           label.textContent = row[1];
@@ -453,7 +512,7 @@
           }
           sel.value = get(row[2]);
           sel.addEventListener('input', () => { set(row[2], sel.value); changed(row[2]); });
-          div.append(label, sel, document.createElement('span'));
+          div.append(label, sel);
           inputs.push([row[2], sel, null]);
         } else {
           const [name, path, min, max, step] = row;
@@ -475,7 +534,7 @@
           div.append(label, inp, out);
           inputs.push([path, inp, out]);
         }
-        panel.append(div);
+        host.append(div);
       }
     }
 
@@ -512,6 +571,9 @@
         relight();
         rebuild();
       }, dark);
+      // Антенны по умолчанию сняты: смотреть на корпус, когда из него торчат
+      // рожки во весь кадр, невозможно. Провода и вилки на стенде нет вовсе.
+      mkCheck('антенны', (v) => { view.antennas = v; applyView(); });
       mkCheck('подложка', (v) => { view.studio = v; applyView(); });
       mkCheck('сетка', (v) => { view.wire = v; applyView(); });
       panel.append(checks);
@@ -536,11 +598,14 @@
       panel.append(accents);
     }
 
-    for (const [title, rows] of GROUPS) {
-      const h = document.createElement('h2');
-      h.textContent = title;
-      panel.append(h);
-      addRows(rows);
+    for (const [title, open, rows] of GROUPS) {
+      const box = document.createElement('details');
+      box.open = open;
+      const sum = document.createElement('summary');
+      sum.textContent = `${title} (${rows.length})`;
+      box.append(sum);
+      panel.append(box);
+      addRows(rows, box);
     }
 
     {
@@ -557,6 +622,9 @@
         spec = structuredClone(LOOK);
         syncInputs();
         relight();
+        // Заодно возвращаем и ракурс: сброс должен возвращать вид целиком
+        orbit.yaw = orbit.pitch = 0;
+        zoomed = false;
         rebuild();
       });
 
@@ -633,6 +701,7 @@
 
     document.getElementById('toggle').addEventListener('click', () => {
       panel.classList.toggle('hidden');
+      document.body.classList.toggle('wide', panel.classList.contains('hidden'));
     });
 
     /* ── Раскладка и цикл ───────────────────────────────────────────────── */
@@ -643,6 +712,7 @@
       renderer.setSize(w, h);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
+      fitCamera();
     }
     new ResizeObserver(resize).observe(stage);
     resize();
