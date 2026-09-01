@@ -9,7 +9,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
-import type { BodyRole, MaterialSpec, ShapeSpec } from './look.js';
+import type { BodyRole, GrainSpec, MaterialSpec, ShapeSpec } from './look.js';
 import type { Palette } from './palette.js';
 import { BLOOM_LAYER } from './bloom.js';
 import { SCREEN_FRAG, SCREEN_VERT } from './shaders.js';
@@ -98,6 +98,93 @@ function bulgeScreen(geo: THREE.BufferGeometry, amount: number, power: number): 
 	geo.computeVertexNormals();
 }
 
+/* ── Шероховатость корпуса ──────────────────────────────────────────────
+ *
+ * Значение-шум: случайные величины сидят в узлах решётки, между ними
+ * сглаженная интерполяция. Узлы берутся по модулю числа ячеек, поэтому
+ * решётка замкнута и плитка сходится сама с собой — без этого по корпусу шли
+ * бы швы там, где текстура повторяется.
+ */
+function latticeHash(x: number, y: number, seed: number): number {
+	const n = Math.sin(x * 127.1 + y * 311.7 + seed * 74.7) * 43758.5453;
+	return n - Math.floor(n);
+}
+
+function valueNoise(u: number, v: number, cells: number, seed: number): number {
+	const x = u * cells;
+	const y = v * cells;
+	const x0 = Math.floor(x);
+	const y0 = Math.floor(y);
+	const fx = x - x0;
+	const fy = y - y0;
+	// Сглаживание Эрмита: без него на границах ячеек видно решётку
+	const sx = fx * fx * (3 - 2 * fx);
+	const sy = fy * fy * (3 - 2 * fy);
+	const at = (i: number, j: number): number =>
+		latticeHash(
+			(((x0 + i) % cells) + cells) % cells,
+			(((y0 + j) % cells) + cells) % cells,
+			seed,
+		);
+	const a = at(0, 0) + (at(1, 0) - at(0, 0)) * sx;
+	const b = at(0, 1) + (at(1, 1) - at(0, 1)) * sx;
+	return a + (b - a) * sy;
+}
+
+/**
+ * Карта нормалей шероховатости.
+ *
+ * Сначала поле высот — две октавы шума, крупная задаёт бугры, мелкая зерно.
+ * Затем нормаль в каждом текселе: наклон поля по X и Y конечными разностями,
+ * третья компонента — единица, всё это нормируется и пакуется в RGB привычным
+ * сдвигом на половину.
+ *
+ * Соседи берутся по модулю стороны, как и узлы решётки: иначе по краю плитки
+ * нормаль ломалась бы, и шов было бы видно именно на бликах — там, где эта
+ * текстура и работает.
+ */
+export function grainTexture(spec: GrainSpec): THREE.CanvasTexture {
+	const S = spec.size;
+	const c = document.createElement('canvas');
+	c.width = c.height = S;
+	const ctx = c.getContext('2d')!;
+
+	const h = new Float32Array(S * S);
+	for (let y = 0; y < S; y++) {
+		for (let x = 0; x < S; x++) {
+			const u = x / S;
+			const v = y / S;
+			h[y * S + x] =
+				valueNoise(u, v, spec.cells, 1) * 0.68 + valueNoise(u, v, spec.cells * 2, 2) * 0.32;
+		}
+	}
+
+	const img = ctx.createImageData(S, S);
+	const d = img.data;
+	const wrap = (i: number): number => ((i % S) + S) % S;
+	for (let y = 0; y < S; y++) {
+		for (let x = 0; x < S; x++) {
+			const dx = (h[y * S + wrap(x + 1)]! - h[y * S + wrap(x - 1)]!) * spec.relief;
+			const dy = (h[wrap(y + 1) * S + x]! - h[wrap(y - 1) * S + x]!) * spec.relief;
+			const len = Math.hypot(dx, dy, 1);
+			const o = (y * S + x) * 4;
+			d[o] = Math.round((-dx / len) * 127.5 + 127.5);
+			d[o + 1] = Math.round((-dy / len) * 127.5 + 127.5);
+			d[o + 2] = Math.round((1 / len) * 127.5 + 127.5);
+			d[o + 3] = 255;
+		}
+	}
+	ctx.putImageData(img, 0, 0);
+
+	const tex = new THREE.CanvasTexture(c);
+	tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+	tex.repeat.set(spec.repeat, spec.repeat);
+	// Карта нормалей — не цвет: через передаточную функцию её гнать нельзя,
+	// иначе наклоны поедут и рельеф станет несимметричным.
+	tex.colorSpace = THREE.NoColorSpace;
+	return tex;
+}
+
 export function buildMaterials(pal: Palette, spec: Record<BodyRole, MaterialSpec>): Materials {
 	const disposables: Disposable[] = [];
 	const roles = {} as Record<BodyRole, THREE.MeshPhysicalMaterial>;
@@ -125,7 +212,12 @@ export function buildMaterials(pal: Palette, spec: Record<BodyRole, MaterialSpec
 	return { roles, disposables };
 }
 
-export function buildCabinet(spec: ShapeSpec, mats: Materials, accent: string): Cabinet {
+export function buildCabinet(
+	spec: ShapeSpec,
+	mats: Materials,
+	accent: string,
+	grain: GrainSpec,
+): Cabinet {
 	const disposables: Disposable[] = [];
 	const keep = <T extends Disposable>(x: T): T => (disposables.push(x), x);
 	const { shell, bezel: bezelMat, knob, steel } = mats.roles;
@@ -148,6 +240,20 @@ export function buildCabinet(spec: ShapeSpec, mats: Materials, accent: string): 
 		),
 	);
 	taperShell(shellGeo, spec);
+
+	/* Шероховатость — только корпусу. Рамка, ручки и хром остаются гладкими:
+	   это разные материалы, и красить их одним зерном значит стирать разницу.
+
+	   Лак поверх (clearcoat) нарочно остаётся ровным: у крашеного бакелита
+	   шероховатая краска под гладкой плёнкой, и блик обязан скользить по
+	   плёнке, а не дробиться о зерно.
+
+	   Касательные под карту нормалей three считает производными в шейдере,
+	   поэтому атрибут tangent геометрии не нужен. */
+	if (grain.scale > 0) {
+		shell.normalMap = keep(grainTexture(grain));
+		shell.normalScale.setScalar(grain.scale);
+	}
 	tilt.add(new THREE.Mesh(shellGeo, shell));
 
 	// Рамка по центру и во всю ширину фасада: ручек справа больше нет, панель

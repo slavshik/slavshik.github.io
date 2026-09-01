@@ -322,7 +322,7 @@
       }
       const pal = palette();
       mats = buildMaterials(pal, spec.materials);
-      cab = buildCabinet(spec.shape, mats, pal.accent);
+      cab = buildCabinet(spec.shape, mats, pal.accent, spec.grain);
       // Розжига здесь нет: экран сразу включён и шумит
       cab.screen.scale.y = 1;
       cab.screenGlass.scale.y = 1;
@@ -392,6 +392,12 @@
         ['лампа Z', 'shape.glow.z', 0.3, 1],
         ['лампа радиус', 'shape.glow.dist', 0.2, 3],
         ['лампа спад', 'shape.glow.decay', 0, 4],
+      ]],
+      ['шероховатость корпуса', false, [
+        ['сила рельефа', 'grain.scale', 0, 1.2],
+        ['крутизна', 'grain.relief', 0, 6],
+        ['мелкость зерна', 'grain.cells', 6, 64],
+        ['повторов', 'grain.repeat', 1, 10],
       ]],
       ['блюдце и винт', false, [
         ['радиус', 'shape.dish.r', 0.05, 0.35],

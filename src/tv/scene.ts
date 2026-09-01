@@ -254,7 +254,7 @@ export function shadowTexture(): THREE.CanvasTexture {
 
 export function buildTV(pal: Palette): TvParts {
 	const mats = buildMaterials(pal, LOOK.materials);
-	const cab = buildCabinet(LOOK.shape, mats, pal.accent);
+	const cab = buildCabinet(LOOK.shape, mats, pal.accent, LOOK.grain);
 	const disposables: Disposable[] = [...mats.disposables, ...cab.disposables];
 	const keep = <T extends Disposable>(x: T): T => (disposables.push(x), x);
 
