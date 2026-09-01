@@ -106,6 +106,18 @@ export const BLOOM_BLUR = /* glsl */ `
   varying vec2 vUv;
   uniform sampler2D uSrc;
   uniform vec2 uDir;
+  uniform float uEncode;
+
+  // Линейное в sRGB. Живёт тут, а не в композите, нарочно: композит идёт по
+  // всему канвасу, а этот проход — по буферу в шесть раз меньше по стороне,
+  // то есть в тридцать шесть раз меньше пикселей. Три pow() на пиксель при
+  // программном рендере стоят дорого, и на полном разрешении они утащили
+  // тест стенда за тридцатисекундный лимит на CI.
+  vec3 toSrgb(vec3 c) {
+    return mix(c * 12.92, 1.055 * pow(max(c, vec3(0.0)), vec3(0.41666)) - 0.055,
+               step(0.0031308, c));
+  }
+
   void main() {
     vec4 sum = texture2D(uSrc, vUv) * 0.1964;
     vec2 o1 = uDir * 1.4118;
@@ -116,7 +128,8 @@ export const BLOOM_BLUR = /* glsl */ `
     sum += (texture2D(uSrc, vUv + o2) + texture2D(uSrc, vUv - o2)) * 0.0944;
     sum += (texture2D(uSrc, vUv + o3) + texture2D(uSrc, vUv - o3)) * 0.0103;
     sum += (texture2D(uSrc, vUv + o4) + texture2D(uSrc, vUv - o4)) * 0.0002;
-    gl_FragColor = sum;
+    // Кодирует только второй проход: складывать яркости надо в линейном.
+    gl_FragColor = vec4(mix(sum.rgb, toSrgb(sum.rgb), uEncode), sum.a);
   }
 `;
 
@@ -142,18 +155,9 @@ export const BLOOM_MIX = /* glsl */ `
   varying vec2 vUv;
   uniform sampler2D uBloom;
   uniform float uStrength, uFlicker;
-
-  // Свечение копилось в линейном свете — там и место складывать яркости, —
-  // а канвас ждёт sRGB.
-  vec3 toSrgb(vec3 c) {
-    return mix(c * 12.92, 1.055 * pow(max(c, vec3(0.0)), vec3(0.41666)) - 0.055,
-               step(0.0031308, c));
-  }
-
   void main() {
-    vec4 b = texture2D(uBloom, vUv);
-    float k = uStrength * uFlicker;
-    // Альфа не цвет: её масштабируем, но через передаточную функцию не гоним
-    gl_FragColor = vec4(toSrgb(b.rgb) * k, b.a * k);
+    // Ни одной pow() и ни одного ветвления: этот проход идёт по всему
+    // канвасу, и всё, что можно было посчитать раньше и мельче, посчитано.
+    gl_FragColor = texture2D(uBloom, vUv) * (uStrength * uFlicker);
   }
 `;

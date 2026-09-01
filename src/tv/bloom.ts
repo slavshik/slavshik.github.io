@@ -28,7 +28,7 @@ import * as THREE from 'three';
 import { BLOOM_BLUR, BLOOM_MIX, FS_VERT } from './shaders.js';
 
 /** Во сколько раз буферы сияния меньше канваса по каждой стороне. */
-const DOWN = 4;
+const DOWN = 6;
 
 /**
  * Слой, на котором лежит то, что светится. Сейчас там ровно один объект —
@@ -101,7 +101,11 @@ export function createBloom(renderer: THREE.WebGLRenderer): Bloom {
 	const blurMat = new THREE.ShaderMaterial({
 		vertexShader: FS_VERT,
 		fragmentShader: BLOOM_BLUR,
-		uniforms: { uSrc: { value: null }, uDir: { value: new THREE.Vector2() } },
+		uniforms: {
+			uSrc: { value: null },
+			uDir: { value: new THREE.Vector2() },
+			uEncode: { value: 0 },
+		},
 		depthTest: false,
 		depthWrite: false,
 		/* NoBlending обязателен, и это стоило долгих поисков. Без него проход
@@ -183,9 +187,11 @@ export function createBloom(renderer: THREE.WebGLRenderer): Bloom {
 			// 2. Два прохода размытия, по оси за проход
 			blurMat.uniforms.uSrc!.value = ping.texture;
 			(blurMat.uniforms.uDir!.value as THREE.Vector2).set(1 / bw, 0);
+			blurMat.uniforms.uEncode!.value = 0;
 			draw(blurMat, pong);
 			blurMat.uniforms.uSrc!.value = pong.texture;
 			(blurMat.uniforms.uDir!.value as THREE.Vector2).set(0, 1 / bh);
+			blurMat.uniforms.uEncode!.value = 1;
 			draw(blurMat, ping);
 
 			// 3. Сцена на канвас — как и до всякой пост-обработки
