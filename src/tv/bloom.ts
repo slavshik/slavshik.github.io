@@ -123,7 +123,7 @@ export function createBloom(renderer: THREE.WebGLRenderer): Bloom {
 		fragmentShader: BLOOM_MIX,
 		uniforms: {
 			uBloom: { value: null },
-			uStrength: { value: 0.34 },
+			uStrength: { value: 0.24 },
 			uFlicker: { value: 0 },
 		},
 		depthTest: false,
