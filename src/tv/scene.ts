@@ -177,48 +177,63 @@ export function buildTV(pal: Palette): TvParts {
 	const disposables: Disposable[] = [...mats.disposables, ...cab.disposables];
 	const keep = <T extends Disposable>(x: T): T => (disposables.push(x), x);
 
-	const { metal: matMetal, cord: matCord, plug: matPlug } = mats.roles;
+	const { metal: matMetal, cord: matCord, plug: matPlug, knob: matKnob } = mats.roles;
 
 	/* Вилка на конце провода. Висит в воздухе и никуда не воткнута — при этом
      экран работает. Ради этой шутки провод и заведён.
-     Круглая и чёрная, с рёбрами под пальцы и латунными штырями. */
+
+     Форма советская бытовая: широкая плоская тарелка у штырей, за ней
+     гладкое тело, к проводу — сужение. Тарелка тут и есть вся порода: на
+     силуэте в два десятка пикселей насечки и фаски не видно, а ступенька
+     диаметра видна, и по ней вилка читается советской, а не какой попало.
+     Поэтому прежние восемь рёбер «под пальцы» убраны совсем: они силуэт не
+     строили, только шумели. */
 	const plug = new THREE.Group();
 
+	// Переход к проводу
+	const neck = new THREE.Mesh(keep(new THREE.CylinderGeometry(0.032, 0.048, 0.04, 20)), matPlug);
+	neck.position.y = 0.036;
+	plug.add(neck);
+
+	// Тело — гладкий цилиндр, чуть расширяющийся к тарелке
 	const plugBody = new THREE.Mesh(
-		keep(new THREE.CylinderGeometry(0.07, 0.082, 0.155, 28)),
+		keep(new THREE.CylinderGeometry(0.063, 0.067, 0.125, 32)),
 		matPlug,
 	);
-	plugBody.position.y = -0.02;
+	plugBody.position.y = -0.046;
 	plug.add(plugBody);
 
-	// Рёбра под пальцы: восьми хватает, чтобы силуэт перестал быть гладким
-	const ribGeo = keep(new THREE.BoxGeometry(0.012, 0.1, 0.016));
-	for (let i = 0; i < 8; i++) {
-		const a = (i / 8) * Math.PI * 2;
-		const rib = new THREE.Mesh(ribGeo, matPlug);
-		rib.position.set(Math.cos(a) * 0.074, -0.02, Math.sin(a) * 0.074);
-		rib.rotation.y = Math.PI / 2 - a;
-		plug.add(rib);
-	}
+	// Тарелка: тонкая и заметно шире тела — из неё и растут штыри
+	const disc = new THREE.Mesh(keep(new THREE.CylinderGeometry(0.094, 0.09, 0.02, 40)), matPlug);
+	disc.position.y = -0.113;
+	plug.add(disc);
 
-	// Фланец — диск у основания штырей
-	const flange = new THREE.Mesh(
-		keep(new THREE.CylinderGeometry(0.093, 0.093, 0.028, 32)),
-		matPlug,
+	/* Винт стяжки — по центру торца, между штырями: там он и стоит у
+     настоящей вилки. Торец смотрит вниз, камера — чуть выше вилки, так что
+     видно его вскользь; головка нарочно выступает из тарелки, иначе на этом
+     ракурсе от неё не осталось бы ничего. */
+	const screw = new THREE.Mesh(
+		keep(new THREE.CylinderGeometry(0.019, 0.019, 0.014, 16)),
+		matMetal,
 	);
-	flange.position.y = -0.111;
-	plug.add(flange);
+	screw.position.set(0, -0.127, 0);
+	plug.add(screw);
+	const slot = new THREE.Mesh(keep(new THREE.BoxGeometry(0.024, 0.004, 0.005)), matKnob);
+	slot.position.set(0, -0.1315, 0);
+	plug.add(slot);
 
-	// Штыри — латунь, с закруглёнными концами
-	const prongGeo = keep(new THREE.CylinderGeometry(0.017, 0.017, 0.115, 18));
-	prongGeo.translate(0, -0.0575, 0);
-	const prongCapGeo = keep(new THREE.SphereGeometry(0.017, 18, 12));
+	// Штыри — латунь, с закруглёнными концами. Тоньше и ближе друг к другу,
+	// чем были: у советской вилки они 4 мм на 19 мм между осями, и прежняя
+	// пара рядом с новой тарелкой выглядела гвоздями.
+	const prongGeo = keep(new THREE.CylinderGeometry(0.015, 0.015, 0.1, 18));
+	prongGeo.translate(0, -0.05, 0);
+	const prongCapGeo = keep(new THREE.SphereGeometry(0.015, 18, 12));
 	for (const sx of [-1, 1]) {
 		const prong = new THREE.Mesh(prongGeo, matMetal);
-		prong.position.set(sx * 0.04, -0.125, 0);
+		prong.position.set(sx * 0.043, -0.123, 0);
 		plug.add(prong);
 		const cap = new THREE.Mesh(prongCapGeo, matMetal);
-		cap.position.set(sx * 0.04, -0.24, 0);
+		cap.position.set(sx * 0.043, -0.223, 0);
 		plug.add(cap);
 	}
 	plug.position.z = ROPE_Z;
