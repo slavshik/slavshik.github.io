@@ -124,6 +124,13 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 	const tv = buildTV(pal);
 	rig.add(tv.body, tv.ropeMesh, tv.plug);
 
+	// Шнур уходит вниз почти отвесно и на экране шириной в три-четыре
+	// пикселя: плитка оплётки ложится на него сильно сжатой по одной оси, и
+	// без анизотропии мипмап замывает пунктир в ровную серость. Предел
+	// спрашиваем у железа — брать больше нечем, меньше незачем.
+	const cordMap = (tv.ropeMesh.material as THREE.MeshPhysicalMaterial).map;
+	if (cordMap) cordMap.anisotropy = renderer.capabilities.getMaxAnisotropy();
+
 	const rope = new Rope(ROPE_N, ROPE_SEG);
 
 	const shadowTex = shadowTexture();

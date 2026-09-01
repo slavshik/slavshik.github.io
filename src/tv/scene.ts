@@ -9,7 +9,7 @@ import * as THREE from 'three';
 
 import { buildCabinet, buildMaterials, type AntennaPart, type Disposable } from './cabinet.js';
 import { BODY_D, BODY_H, BODY_W, FOOT_H, ROPE_N, ROPE_R, ROPE_RAD, ROPE_Z } from './constants.js';
-import { LOOK } from './look.js';
+import { LOOK, type CordSpec } from './look.js';
 import type { Palette } from './palette.js';
 import type { Rope } from './physics.js';
 
@@ -31,20 +31,38 @@ export interface TvParts {
 	plug: THREE.Group;
 }
 
+// Колец в трубке столько же, сколько точек в цепочке, а столбцов на один
+// больше радиальных сегментов. Лишний столбец лежит ровно на нулевом, но с
+// u = 1 вместо u = 0: без него шов трубки протаскивал бы всю текстуру назад
+// одним квадом, и по шнуру шла бы сплошная полоса.
+const ROPE_COLS = ROPE_R + 1;
+
 // Трубка вдоль цепочки. Геометрия создаётся один раз, каждый кадр
-// переписываются только позиции и нормали — новых аллокаций нет.
+// переписываются только позиции и нормали — новых аллокаций нет. Развёртка
+// статична: длина цепочки задана звеньями и не меняется.
 function makeRopeMesh(mat: THREE.Material): { mesh: THREE.Mesh; geo: THREE.BufferGeometry } {
-	const verts = ROPE_N * ROPE_R;
+	const verts = ROPE_N * ROPE_COLS;
 	const geo = new THREE.BufferGeometry();
 	geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(verts * 3), 3));
 	geo.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(verts * 3), 3));
+
+	const uv = new Float32Array(verts * 2);
+	for (let i = 0; i < ROPE_N; i++) {
+		for (let j = 0; j < ROPE_COLS; j++) {
+			const o = (i * ROPE_COLS + j) * 2;
+			uv[o] = j / ROPE_R;
+			uv[o + 1] = i / (ROPE_N - 1);
+		}
+	}
+	geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+
 	const idx: number[] = [];
 	for (let i = 0; i < ROPE_N - 1; i++) {
 		for (let j = 0; j < ROPE_R; j++) {
-			const a = i * ROPE_R + j;
-			const b = i * ROPE_R + ((j + 1) % ROPE_R);
-			const c = (i + 1) * ROPE_R + j;
-			const d = (i + 1) * ROPE_R + ((j + 1) % ROPE_R);
+			const a = i * ROPE_COLS + j;
+			const b = i * ROPE_COLS + j + 1;
+			const c = (i + 1) * ROPE_COLS + j;
+			const d = (i + 1) * ROPE_COLS + j + 1;
 			idx.push(a, c, b, b, c, d);
 		}
 	}
@@ -70,14 +88,16 @@ export function updateRopeMesh(geo: THREE.BufferGeometry, rope: Rope): void {
 		const ny = tx; // в плоскости XY
 		const cx = p[i * 2]!;
 		const cy = p[i * 2 + 1]!;
-		for (let j = 0; j < ROPE_R; j++) {
-			const a = (j / ROPE_R) * Math.PI * 2;
+		for (let j = 0; j < ROPE_COLS; j++) {
+			// Замыкающий столбец — тот же угол, что и нулевой: точка одна,
+			// а вершины две, и различает их только развёртка.
+			const a = ((j % ROPE_R) / ROPE_R) * Math.PI * 2;
 			const ca = Math.cos(a);
 			const sa = Math.sin(a);
 			const ux = nx * ca;
 			const uy = ny * ca;
 			const uz = sa; // бинормаль = ось Z
-			const o = (i * ROPE_R + j) * 3;
+			const o = (i * ROPE_COLS + j) * 3;
 			pos[o] = cx + ux * ROPE_RAD;
 			pos[o + 1] = cy + uy * ROPE_RAD;
 			pos[o + 2] = ROPE_Z + uz * ROPE_RAD;
@@ -88,6 +108,52 @@ export function updateRopeMesh(geo: THREE.BufferGeometry, rope: Rope): void {
 	}
 	geo.attributes.position!.needsUpdate = true;
 	geo.attributes.normal!.needsUpdate = true;
+}
+
+/**
+ * Оплётка шнура: чёрная нить в жёлтую крапину.
+ *
+ * Штрихи стоят по центрам клеток через одну, как чёрные поля на доске, и
+ * все наклонены одинаково — так плетение читается направлением, а не
+ * рисунком, которого на трёх пикселях всё равно не разглядеть. За край
+ * клетки штрих не выходит (это стережёт dash), поэтому плитка сходится
+ * сама с собой и по горизонтали, и по вертикали: шва нет ни на витке, ни
+ * на стыке повторов.
+ */
+export function braidTexture(spec: CordSpec): THREE.CanvasTexture {
+	const S = 64;
+	const c = document.createElement('canvas');
+	c.width = c.height = S;
+	const ctx = c.getContext('2d')!;
+	ctx.fillStyle = spec.base;
+	ctx.fillRect(0, 0, S, S);
+
+	const step = S / spec.cells;
+	// Полудлина штриха вместе с круглым колпачком: колпачок торчит за
+	// конец на половину толщины, и без него в запасе плитка бы разъехалась.
+	const half = Math.min((step * spec.dash) / 2, step / 2 - (spec.width * S) / 2);
+	const dx = Math.cos(spec.skew) * half;
+	const dy = Math.sin(spec.skew) * half;
+	ctx.strokeStyle = spec.fleck;
+	ctx.lineWidth = spec.width * S;
+	ctx.lineCap = 'round';
+	for (let row = 0; row < spec.cells; row++) {
+		for (let col = 0; col < spec.cells; col++) {
+			if ((row + col) % 2) continue;
+			const x = (col + 0.5) * step;
+			const y = (row + 0.5) * step;
+			ctx.beginPath();
+			ctx.moveTo(x - dx, y - dy);
+			ctx.lineTo(x + dx, y + dy);
+			ctx.stroke();
+		}
+	}
+
+	const tex = new THREE.CanvasTexture(c);
+	tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+	tex.repeat.set(spec.repeat[0], spec.repeat[1]);
+	tex.colorSpace = THREE.SRGBColorSpace;
+	return tex;
 }
 
 export function shadowTexture(): THREE.CanvasTexture {
@@ -170,6 +236,11 @@ export function buildTV(pal: Palette): TvParts {
 	// Провод живёт не в body: его точки считаются сразу в координатах rig,
 	// а якорь берётся от корпуса. Иначе пришлось бы гонять их через матрицу
 	// вращающегося родителя туда и обратно каждый кадр.
+	// Цвет оплётки живёт в текстуре, а не в материале: у нити и у пунктира
+	// он разный, а color у материала один на всех. Анизотропию ставит
+	// index.ts — про renderer тут не знают.
+	matCord.map = keep(braidTexture(LOOK.cord));
+
 	const ropeParts = makeRopeMesh(matCord);
 
 	return {
