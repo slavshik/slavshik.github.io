@@ -7,5 +7,5 @@
 	"compilerOptions": {
 		"types": ["node"]
 	},
-	"include": ["test", "vite.config.ts", "playwright.config.ts", "eslint.config.js"]
+	"include": ["test", "scripts", "vite.config.ts", "playwright.config.ts", "eslint.config.js"]
 }

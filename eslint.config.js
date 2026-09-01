@@ -35,7 +35,7 @@ export default tseslint.config(
 	{
 		// Тесты и конфиги живут в node, но page.evaluate() исполняется в
 		// браузере — и пишется прямо здесь, поэтому глобали нужны обе.
-		files: ['test/**/*.{ts,mjs}', '*.config.{ts,js}'],
+		files: ['test/**/*.{ts,mjs}', 'scripts/**/*.mjs', '*.config.{ts,js}'],
 		languageOptions: {
 			globals: { ...globals.node, ...globals.browser },
 		},

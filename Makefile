@@ -15,7 +15,7 @@ DOCKER   := docker run --rm -v "$(CURDIR)":/repo -v /repo/node_modules -w /repo
 
 .DEFAULT_GOAL := help
 .PHONY: help install dev lan preview lab look og-lab render check test unit e2e e2e-update \
-        baselines size syntax build og sitemap format lint
+        baselines size syntax build og sitemap format lint stats
 
 help: ## Показать этот список
 	@grep -hE '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -86,6 +86,9 @@ baselines: ## Снять эталоны с коммита REF (по умолча
 	  -v "$$tmp":/pristine:ro -w /repo $(PW_IMAGE) \
 	  bash -lc "npm ci --no-audit --no-fund && node test/capture-baselines.mjs"; \
 	code=$$?; rm -rf "$$tmp"; exit $$code
+
+stats: ## Сводка по визитам из D1: make stats DAYS=30
+	@node scripts/stats.mjs
 
 size: build ## Проверить бюджет веса
 	@node test/size.mjs
