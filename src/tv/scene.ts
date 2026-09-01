@@ -156,6 +156,31 @@ export function braidTexture(spec: CordSpec): THREE.CanvasTexture {
 	return tex;
 }
 
+/** Точка на ребре from→to, отступив от from на r (но не дальше середины). */
+function alongEdge(from: [number, number], to: [number, number], r: number): [number, number] {
+	const dx = to[0] - from[0];
+	const dy = to[1] - from[1];
+	const len = Math.hypot(dx, dy) || 1;
+	const k = Math.min(r, len / 2) / len;
+	return [from[0] + dx * k, from[1] + dy * k];
+}
+
+/** Многоугольник со скруглёнными углами: угол становится квадратичной кривой. */
+function roundedPoly(pts: [number, number][], r: number): THREE.Shape {
+	const shape = new THREE.Shape();
+	const n = pts.length;
+	for (let i = 0; i < n; i++) {
+		const cur = pts[i]!;
+		const a = alongEdge(cur, pts[(i - 1 + n) % n]!, r);
+		const b = alongEdge(cur, pts[(i + 1) % n]!, r);
+		if (i === 0) shape.moveTo(a[0], a[1]);
+		else shape.lineTo(a[0], a[1]);
+		shape.quadraticCurveTo(cur[0], cur[1], b[0], b[1]);
+	}
+	shape.closePath();
+	return shape;
+}
+
 export function shadowTexture(): THREE.CanvasTexture {
 	const c = document.createElement('canvas');
 	c.width = c.height = 128;
@@ -182,65 +207,78 @@ export function buildTV(pal: Palette): TvParts {
 	/* Вилка на конце провода. Висит в воздухе и никуда не воткнута — при этом
      экран работает. Ради этой шутки провод и заведён.
 
-     Форма советская бытовая: широкая плоская тарелка у штырей, за ней
-     гладкое тело, к проводу — сужение. Тарелка тут и есть вся порода: на
-     силуэте в два десятка пикселей насечки и фаски не видно, а ступенька
-     диаметра видна, и по ней вилка читается советской, а не какой попало.
-     Поэтому прежние восемь рёбер «под пальцы» убраны совсем: они силуэт не
-     строили, только шумели. */
+     Форма советская, узнаваемая: круглое основание, а за ним не цилиндр, а
+     ПЛОСКАЯ лопатка, сужающаяся к проводу. Оттого вилка и выглядит с одного
+     бока треугольной, а с другого — тонкой пластиной. Цилиндр, который тут
+     стоял раньше, эту породу терял начисто: с любой стороны он одинаковый.
+
+     Плоскость — не мелочь, а то, ради чего всё: вилку каждый кадр доворачивает
+     вокруг Z (index.ts), в плоскости XY, поэтому широкая грань всегда против
+     камеры. Штыри разведены по X, то есть лежат в той же плоскости, что и
+     лопатка, — как на настоящей. */
 	const plug = new THREE.Group();
 
-	// Переход к проводу
-	const neck = new THREE.Mesh(keep(new THREE.CylinderGeometry(0.032, 0.048, 0.04, 20)), matPlug);
-	neck.position.y = 0.036;
-	plug.add(neck);
-
-	// Тело — гладкий цилиндр, чуть расширяющийся к тарелке
-	const plugBody = new THREE.Mesh(
-		keep(new THREE.CylinderGeometry(0.063, 0.067, 0.125, 32)),
-		matPlug,
+	// Лопатка: скруглённая трапеция, выдавленная по Z с фаской. У тарелки она
+	// почти во всю её ширину, к проводу сужается вдвое с лишним.
+	const bodyShape = roundedPoly(
+		[
+			[-0.072, -0.108],
+			[0.072, -0.108],
+			[0.032, 0.058],
+			[-0.032, 0.058],
+		],
+		0.026,
 	);
-	plugBody.position.y = -0.046;
-	plug.add(plugBody);
+	const bodyGeo = keep(
+		new THREE.ExtrudeGeometry(bodyShape, {
+			depth: 0.05,
+			bevelEnabled: true,
+			bevelSize: 0.014,
+			bevelThickness: 0.014,
+			bevelSegments: 4,
+			curveSegments: 12,
+		}),
+	);
+	// Выдавливание идёт от нуля вперёд, а вилке нужно стоять серединой в
+	// плоскости провода: иначе она висит сбоку от него.
+	bodyGeo.translate(0, 0, -0.025);
+	plug.add(new THREE.Mesh(bodyGeo, matPlug));
 
-	// Тарелка: тонкая и заметно шире тела — из неё и растут штыри
-	const disc = new THREE.Mesh(keep(new THREE.CylinderGeometry(0.094, 0.09, 0.02, 40)), matPlug);
-	disc.position.y = -0.113;
+	// Круглое основание: тонкая тарелка чуть шире лопатки — из неё штыри
+	const disc = new THREE.Mesh(keep(new THREE.CylinderGeometry(0.098, 0.094, 0.022, 40)), matPlug);
+	disc.position.y = -0.114;
 	plug.add(disc);
 
-	/* Винт стяжки — по центру торца, между штырями: там он и стоит у
-     настоящей вилки. Торец смотрит вниз, камера — чуть выше вилки, так что
-     видно его вскользь; головка нарочно выступает из тарелки, иначе на этом
-     ракурсе от неё не осталось бы ничего. */
+	/* Винт стяжки: ровно между штырями по X, посреди лопатки по Y и осью
+     ПОПЕРЁК штырей — он держит две половинки корпуса, а те разъединяются по
+     плоскости лопатки. Головка выступает над гранью: заподлицо от неё на
+     этом размере не осталось бы ничего. */
 	const screw = new THREE.Mesh(
-		keep(new THREE.CylinderGeometry(0.019, 0.019, 0.014, 16)),
+		keep(new THREE.CylinderGeometry(0.021, 0.021, 0.014, 16)),
 		matMetal,
 	);
-	screw.position.set(0, -0.127, 0);
+	screw.rotation.x = Math.PI / 2;
+	screw.position.set(0, -0.042, 0.042);
 	plug.add(screw);
-	const slot = new THREE.Mesh(keep(new THREE.BoxGeometry(0.024, 0.004, 0.005)), matKnob);
-	slot.position.set(0, -0.1315, 0);
+	const slot = new THREE.Mesh(keep(new THREE.BoxGeometry(0.026, 0.005, 0.005)), matKnob);
+	slot.position.set(0, -0.042, 0.0475);
 	plug.add(slot);
 
-	// Штыри — латунь, с закруглёнными концами. Тоньше и ближе друг к другу,
-	// чем были: у советской вилки они 4 мм на 19 мм между осями, и прежняя
-	// пара рядом с новой тарелкой выглядела гвоздями.
+	// Штыри — латунь, с закруглёнными концами
 	const prongGeo = keep(new THREE.CylinderGeometry(0.015, 0.015, 0.1, 18));
 	prongGeo.translate(0, -0.05, 0);
 	const prongCapGeo = keep(new THREE.SphereGeometry(0.015, 18, 12));
 	for (const sx of [-1, 1]) {
 		const prong = new THREE.Mesh(prongGeo, matMetal);
-		prong.position.set(sx * 0.043, -0.123, 0);
+		prong.position.set(sx * 0.043, -0.125, 0);
 		plug.add(prong);
 		const cap = new THREE.Mesh(prongCapGeo, matMetal);
-		cap.position.set(sx * 0.043, -0.223, 0);
+		cap.position.set(sx * 0.043, -0.225, 0);
 		plug.add(cap);
 	}
-	/* Вилка нарочно крупнее натуральной. По габаритам корпуса ей полагается
-     ~22 px на экране, а на этом размере форма не работает: тарелка, гладкое
-     тело и штыри укладываются в те же двадцать два пикселя, что и прежний
-     ребристый бочонок, и смена формы различима на 8% пикселей — то есть не
-     различима. Игрушке важнее читаться, чем быть в масштабе. */
+
+	/* Вилка нарочно крупнее натуральной: по габаритам корпуса ей полагается
+     около двадцати пикселей, а на таком размере форма не работает вовсе. */
 	plug.scale.setScalar(1.45);
 	plug.position.z = ROPE_Z;
 
