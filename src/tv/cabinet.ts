@@ -11,6 +11,7 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 
 import type { BodyRole, MaterialSpec, ShapeSpec } from './look.js';
 import type { Palette } from './palette.js';
+import { BLOOM_LAYER } from './bloom.js';
 import { SCREEN_FRAG, SCREEN_VERT } from './shaders.js';
 
 export interface Disposable {
@@ -202,6 +203,9 @@ export function buildCabinet(spec: ShapeSpec, mats: Materials, accent: string): 
 		}),
 	);
 	const screen = new THREE.Mesh(screenGeo, screenMat);
+	// Люминофор — единственное, что светится само. Слой сияния читает
+	// именно его, поэтому пометка живёт тут, рядом с созданием меша.
+	screen.layers.enable(BLOOM_LAYER);
 	screen.position.set(0, 0, spec.screen.z);
 	screen.scale.y = 0.02; // розжиг растянет до 1
 	tilt.add(screen);
