@@ -10,7 +10,7 @@
 export const BODY_W = 1.1;
 export const BODY_H = 0.88;
 export const BODY_D = 0.8;
-export const FOOT_H = 0.045;
+export const FOOT_H = 0.043825;
 
 export const HALF_H = BODY_H / 2 + FOOT_H; // от центра масс до низа ножек
 export const HALF_W = BODY_W / 2;
