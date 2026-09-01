@@ -25,9 +25,9 @@ jobs:
         name: типы, линтер, юнит-тесты, сборка
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@v7
 
-            - uses: actions/setup-node@v4
+            - uses: actions/setup-node@v7
               with:
                   node-version-file: .nvmrc
                   cache: npm
@@ -57,7 +57,7 @@ jobs:
 
             - name: артефакт для публикации
               if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-              uses: actions/upload-pages-artifact@v3
+              uses: actions/upload-pages-artifact@v5
               with:
                   path: dist
 
@@ -67,7 +67,7 @@ jobs:
         container:
             image: mcr.microsoft.com/playwright:v1.62.1-noble
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@v7
 
             - run: npm ci
 
@@ -79,7 +79,7 @@ jobs:
 
             - name: отчёт, если что-то разошлось
               if: failure()
-              uses: actions/upload-artifact@v4
+              uses: actions/upload-artifact@v7
               with:
                   name: playwright-report
                   path: |
@@ -100,4 +100,4 @@ jobs:
             url: ${{ steps.deployment.outputs.page_url }}
         steps:
             - id: deployment
-              uses: actions/deploy-pages@v4
+              uses: actions/deploy-pages@v5
