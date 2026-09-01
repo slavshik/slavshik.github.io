@@ -123,7 +123,12 @@ export function createBloom(renderer: THREE.WebGLRenderer): Bloom {
 		fragmentShader: BLOOM_MIX,
 		uniforms: {
 			uBloom: { value: null },
-			uStrength: { value: 0.24 },
+			/* 0.58 — это прежние 0.34 плюс семьдесят процентов, как и просили.
+			   Рамка на этой силе выбивается в чистый 255 и теряет форму: срез
+			   начинается около 0.34 (единичные пиксели), к 0.40 их пятнадцать
+			   из девятисот в замеряемом пятне, к 0.48 — сто два. Число живёт
+			   тут одно, менять его — одна правка. */
+			uStrength: { value: 0.58 },
 			uFlicker: { value: 0 },
 		},
 		depthTest: false,
