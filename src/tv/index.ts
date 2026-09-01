@@ -266,7 +266,9 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 	function updateScreen(dt: number, t: number): void {
 		power = Math.min(1, power + dt / 0.9);
 		const ease = 1 - Math.pow(1 - power, 3);
-		tv.screen.scale.y = 0.02 + 0.98 * Math.min(1, ease * 1.06);
+		const screenScale = 0.02 + 0.98 * Math.min(1, ease * 1.06);
+		tv.screen.scale.y = screenScale;
+		tv.screenGlass.scale.y = screenScale;
 
 		flashV *= Math.exp(-dt / 0.09);
 
@@ -315,9 +317,9 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 		u.uTexMix!.value = texMix;
 		u.uIntensity!.value = ease + flashV;
 		tv.glow.intensity = (0.5 + flashV * 2.5) * ease;
-		// Сияние горит и на пустом экране — снег тоже светится, — но под
-		// передачей вдвое сильнее: там и картинка ярче, и смотреть на неё.
-		tv.glowMat.opacity = (0.12 + 0.26 * texMix + flashV * 0.6) * ease;
+		// Центр bloom прозрачен: эффект чувствуется в воздухе вокруг трубки, но
+		// не поднимает чёрный уровень и не съедает контраст самой передачи.
+		tv.bloomMat.opacity = (0.09 + 0.14 * texMix + flashV * 0.24) * ease;
 	}
 
 	/* ── Ввод ───────────────────────────────────────────────────────────── */
@@ -376,9 +378,7 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 		const accent = new THREE.Color(pal.accent);
 		(tv.screenMat.uniforms.uAccent!.value as THREE.Color).copy(accent);
 		tv.glow.color.copy(accent);
-		// Свет, а не светофильтр: чистый акцент в аддитивном пятне читается
-		// цветной плёнкой поверх стекла, поэтому он разбавлен белым.
-		tv.glowMat.color.copy(accent).lerp(new THREE.Color(0xffffff), 0.5);
+		tv.bloomMat.color.copy(accent).lerp(new THREE.Color(0xffffff), 0.62);
 		lighting.refresh(pal);
 		tv.body.traverse((o) => {
 			const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;

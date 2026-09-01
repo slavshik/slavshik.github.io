@@ -20,9 +20,9 @@ export interface TvParts {
 	tilt: THREE.Group;
 	screen: THREE.Mesh;
 	screenMat: THREE.ShaderMaterial;
+	screenGlass: THREE.Mesh;
 	glow: THREE.PointLight;
-	/** Сияние стекла: аддитивное пятно перед рамкой. */
-	glowMat: THREE.MeshBasicMaterial;
+	bloomMat: THREE.MeshBasicMaterial;
 	antennas: AntennaPart[];
 	proxy: THREE.Mesh;
 	disposables: Disposable[];
@@ -177,8 +177,9 @@ export function buildTV(pal: Palette): TvParts {
 		tilt: cab.tilt,
 		screen: cab.screen,
 		screenMat: cab.screenMat,
+		screenGlass: cab.screenGlass,
 		glow: cab.glow,
-		glowMat: cab.glowMat,
+		bloomMat: cab.bloomMat,
 		antennas: cab.antennas,
 		proxy,
 		disposables,

@@ -32,20 +32,36 @@ const TONE: Record<LightSpec['toneMapping'], THREE.ToneMapping> = {
 	neutral: THREE.NeutralToneMapping,
 };
 
-// Среда из вертикального градиента: отражениям хватает намёка на «светлый
-// верх, тёмный низ», а собственная картинка не тянет ни байта ассетов.
+// Маленькая процедурная студия: градиент задаёт помещение, два мягких окна
+// дают пластику и металлу узнаваемые полосы отражений. Это не ассет в чанке,
+// а несколько килобайт видеопамяти, созданных один раз при сборке сцены.
 function envTexture(top: string, bottom: string): THREE.CanvasTexture {
 	const c = document.createElement('canvas');
-	c.width = 8;
+	c.width = 128;
 	c.height = 64;
 	const ctx = c.getContext('2d')!;
 	const g = ctx.createLinearGradient(0, 0, 0, 64);
 	g.addColorStop(0, top);
 	g.addColorStop(1, bottom);
 	ctx.fillStyle = g;
-	ctx.fillRect(0, 0, 8, 64);
+	ctx.fillRect(0, 0, 128, 64);
+
+	const softbox = ctx.createRadialGradient(30, 17, 1, 30, 17, 24);
+	softbox.addColorStop(0, 'rgba(255,255,255,0.95)');
+	softbox.addColorStop(0.35, 'rgba(255,255,255,0.48)');
+	softbox.addColorStop(1, 'rgba(255,255,255,0)');
+	ctx.fillStyle = softbox;
+	ctx.fillRect(4, 0, 52, 45);
+
+	const rim = ctx.createLinearGradient(92, 0, 118, 0);
+	rim.addColorStop(0, 'rgba(255,255,255,0)');
+	rim.addColorStop(0.55, 'rgba(255,255,255,0.28)');
+	rim.addColorStop(1, 'rgba(255,255,255,0)');
+	ctx.fillStyle = rim;
+	ctx.fillRect(92, 3, 26, 48);
 	const tex = new THREE.CanvasTexture(c);
 	tex.mapping = THREE.EquirectangularReflectionMapping;
+	tex.colorSpace = THREE.SRGBColorSpace;
 	return tex;
 }
 

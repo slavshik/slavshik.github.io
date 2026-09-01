@@ -325,9 +325,10 @@
       cab = buildCabinet(spec.shape, mats, pal.accent);
       // Розжига здесь нет: экран сразу включён и шумит
       cab.screen.scale.y = 1;
+      cab.screenGlass.scale.y = 1;
       cab.screenMat.uniforms.uIntensity.value = 1;
       cab.glow.intensity = 0.5;
-      cab.glowMat.opacity = 0.12;
+      cab.bloomMat.opacity = 0.14;
       root.add(cab.tilt);
       applyView();
       fitCamera();
@@ -382,14 +383,19 @@
         ['купол', 'shape.screen.bulge', 0, 0.4],
         ['крутизна', 'shape.screen.power', 0.2, 2],
         ['глубина Z', 'shape.screen.z', 0.2, 0.6],
+		['стекло зазор', 'shape.screen.glassOffset', 0.001, 0.025],
+		['#', 'стекло цвет', 'shape.screen.glassColor'],
+		['стекло шерох.', 'shape.screen.glassRoughness', 0, 0.5],
+		['стекло прозрач.', 'shape.screen.glassOpacity', 0, 0.6],
+		['стекло IOR', 'shape.screen.glassIor', 1, 2.33],
       ]],
       ['свечение', false, [
         ['лампа Z', 'shape.glow.z', 0.3, 1],
         ['лампа радиус', 'shape.glow.dist', 0.2, 3],
         ['лампа спад', 'shape.glow.decay', 0, 4],
-        ['пятно шир.', 'shape.halo.w', 0.5, 2.5],
-        ['пятно выс.', 'shape.halo.h', 0.3, 2],
-        ['пятно Z', 'shape.halo.z', 0.3, 0.8],
+		['bloom шир.', 'shape.bloom.w', 0.8, 3.5],
+		['bloom выс.', 'shape.bloom.h', 0.5, 2.5],
+		['bloom Z', 'shape.bloom.z', 0.3, 0.8],
       ]],
       ['блюдце и винт', false, [
         ['радиус', 'shape.dish.r', 0.05, 0.35],
@@ -467,6 +473,9 @@
       matRows.push(['#', name, `materials.${role}.color`]);
       matRows.push(['шероховатость', `materials.${role}.roughness`, 0, 1]);
       matRows.push(['металличность', `materials.${role}.metalness`, 0, 1]);
+	  matRows.push(['лак', `materials.${role}.clearcoat`, 0, 1]);
+	  matRows.push(['шерох. лака', `materials.${role}.clearcoatRoughness`, 0, 1]);
+	  matRows.push(['сила блика', `materials.${role}.specularIntensity`, 0, 1]);
     }
     GROUPS.unshift(['материалы', true, matRows]);
 
@@ -674,20 +683,20 @@
     }
 
     // Экран с шейдером и аддитивное пятно экспортёры не понимают: на время
-    // экспорта экран прикидывается тёмным стеклом, пятно прячется.
+    // экспорта люминофор прячется, а физическое стекло остаётся.
     async function withExportable(fn) {
-      const glassMat = new THREE.MeshStandardMaterial({ color: '#101418', roughness: 0.25 });
-      const prevMat = cab.screen.material;
-      cab.screen.material = glassMat;
-      let halo = null;
-      cab.tilt.traverse((o) => { if (o.isMesh && o.material === cab.glowMat) halo = o; });
-      if (halo) halo.visible = false;
+	  const wasScreenVisible = cab.screen.visible;
+	  cab.screen.visible = false;
+	  const halos = [];
+	  cab.tilt.traverse((o) => {
+		if (o.isMesh && o.material === cab.bloomMat) halos.push(o);
+	  });
+	  for (const halo of halos) halo.visible = false;
       try {
         return await fn();
       } finally {
-        cab.screen.material = prevMat;
-        if (halo) halo.visible = true;
-        glassMat.dispose();
+		cab.screen.visible = wasScreenVisible;
+		for (const halo of halos) halo.visible = true;
       }
     }
 

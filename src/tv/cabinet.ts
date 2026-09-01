@@ -26,7 +26,7 @@ export interface AntennaPart {
 }
 
 export interface Materials {
-	roles: Record<BodyRole, THREE.MeshStandardMaterial>;
+	roles: Record<BodyRole, THREE.MeshPhysicalMaterial>;
 	disposables: Disposable[];
 }
 
@@ -34,9 +34,11 @@ export interface Cabinet {
 	tilt: THREE.Group;
 	screen: THREE.Mesh;
 	screenMat: THREE.ShaderMaterial;
+	/** Прозрачный отражающий купол поверх люминофора. */
+	screenGlass: THREE.Mesh;
 	glow: THREE.PointLight;
-	/** Сияние стекла: аддитивное пятно перед рамкой. */
-	glowMat: THREE.MeshBasicMaterial;
+	/** Широкий и слабый второй масштаб сияния — дешёвый selective bloom. */
+	bloomMat: THREE.MeshBasicMaterial;
 	antennas: AntennaPart[];
 	/** Вся антенная надстройка одним узлом: блюдце, винт и оба рожка. */
 	antennaGroup: THREE.Group;
@@ -98,33 +100,22 @@ function bulgeScreen(geo: THREE.BufferGeometry, amount: number, power: number): 
 }
 
 /**
- * Мягкое пятно света. Кинескоп светит не только в рамку, но и в воздух перед
- * собой, и именно этот ореол читается как «экран включён» — одного
- * источника света внутри корпуса для этого мало, его видно только по бликам
- * на пластике.
- *
- * Градиент нарочно нелинейный: линейный даёт заметный обод по краю пятна, и
- * вместо свечения выходит наклейка.
+ * Широкая половина bloom. Настоящий постпроцесс размывает яркие пиксели в
+ * несколько mip-уровней; телевизору, у которого светится только кинескоп,
+ * тот же силуэт дешевле дать вторым эллипсом. Прозрачный центр сохраняет
+ * контраст передачи, длинный хвост мягко связывает экран с корпусом и фоном.
  */
-export function glowTexture(): THREE.CanvasTexture {
+export function bloomTexture(): THREE.CanvasTexture {
 	const c = document.createElement('canvas');
 	c.width = c.height = 128;
 	const ctx = c.getContext('2d')!;
-	// Не пятно, а кольцо: в середине пятна лежит сама картинка, и свет поверх
-	// неё съедает контраст — ровно то, что перед этим расчищали. Свету место
-	// у края стекла и за ним, где он и виден как свет.
-	//
-	// Радиусы привязаны к плоскости, а плоскость подогнана под пропорцию
-	// экрана — тогда круглый градиент становится эллипсом той же формы, и
-	// край окна оказывается на 0.54 по обеим осям сразу. Кольцо ставится
-	// заметно дальше, чтобы гореть по ту сторону стекла, а не по картинке.
-	const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
-	g.addColorStop(0.0, 'rgba(255,255,255,0.07)');
-	g.addColorStop(0.4, 'rgba(255,255,255,0.13)');
-	g.addColorStop(0.62, 'rgba(255,255,255,0.85)');
-	g.addColorStop(0.74, 'rgba(255,255,255,0.45)');
-	g.addColorStop(0.88, 'rgba(255,255,255,0.11)');
-	g.addColorStop(1.0, 'rgba(255,255,255,0)');
+	const g = ctx.createRadialGradient(64, 64, 4, 64, 64, 64);
+	g.addColorStop(0, 'rgba(255,255,255,0)');
+	g.addColorStop(0.27, 'rgba(255,255,255,0.03)');
+	g.addColorStop(0.43, 'rgba(255,255,255,0.72)');
+	g.addColorStop(0.58, 'rgba(255,255,255,0.32)');
+	g.addColorStop(0.78, 'rgba(255,255,255,0.08)');
+	g.addColorStop(1, 'rgba(255,255,255,0)');
 	ctx.fillStyle = g;
 	ctx.fillRect(0, 0, 128, 128);
 	const tex = new THREE.CanvasTexture(c);
@@ -134,16 +125,19 @@ export function glowTexture(): THREE.CanvasTexture {
 
 export function buildMaterials(pal: Palette, spec: Record<BodyRole, MaterialSpec>): Materials {
 	const disposables: Disposable[] = [];
-	const roles = {} as Record<BodyRole, THREE.MeshStandardMaterial>;
+	const roles = {} as Record<BodyRole, THREE.MeshPhysicalMaterial>;
 	for (const role of Object.keys(spec) as BodyRole[]) {
 		const s = spec[role];
-		const m = new THREE.MeshStandardMaterial({
+		const m = new THREE.MeshPhysicalMaterial({
 			// Цвет — из палитры, а не из спеки: палитра и сеет его из спеки, и
 			// умеет перекрасить по роли, когда меняется тема. userData.role — имя
 			// ключа, по которому refreshTheme находит материал.
 			color: new THREE.Color(pal[role]),
 			roughness: s.roughness,
 			metalness: s.metalness,
+			clearcoat: s.clearcoat,
+			clearcoatRoughness: s.clearcoatRoughness,
+			specularIntensity: s.specularIntensity,
 			// Бок корпуса — большое ровное пятно с плавным затуханием, и в
 			// восьми битах на канал по нему идут полосы. Дизеринг разбивает их
 			// шумом в пол-единицы.
@@ -209,7 +203,8 @@ export function buildCabinet(spec: ShapeSpec, mats: Materials, accent: string): 
 	tilt.add(bezel);
 
 	// Экран чуть больше отверстия: край уходит под рамку, стыка не видно.
-	// Купол сильный и вылезает за рамку — колба выпучена наружу.
+	// Купол лишь слегка выходит за лицевую грань рамки: кривизна читается в
+	// силуэте и отражениях, но не возвращается к исходной форме пузыря.
 	const screenGeo = keep(new THREE.PlaneGeometry(spec.screen.w, spec.screen.h, 44, 32));
 	bulgeScreen(screenGeo, spec.screen.bulge, spec.screen.power);
 	// Заглушка под uTex: сэмплер обязан быть привязан к чему-то и тогда, когда
@@ -237,18 +232,43 @@ export function buildCabinet(spec: ShapeSpec, mats: Materials, accent: string): 
 	screen.scale.y = 0.02; // розжиг растянет до 1
 	tilt.add(screen);
 
+	// Картинка — светящийся люминофор, а отражения живут на отдельном куполе.
+	// Если рисовать блик прямо в сигнале, он ездит вместе с изображением и не
+	// реагирует ни на ракурс, ни на свет. Одна и та же геометрия гарантирует,
+	// что стекло повторяет кривизну трубки; малый сдвиг разводит поверхности.
+	const glassMat = keep(
+		new THREE.MeshPhysicalMaterial({
+			color: new THREE.Color(spec.screen.glassColor),
+			roughness: spec.screen.glassRoughness,
+			metalness: 0,
+			ior: spec.screen.glassIor,
+			specularIntensity: 1,
+			clearcoat: 1,
+			clearcoatRoughness: spec.screen.glassRoughness * 0.5,
+			transparent: true,
+			opacity: spec.screen.glassOpacity,
+			depthWrite: false,
+			dithering: true,
+		}),
+	);
+	const screenGlass = new THREE.Mesh(screenGeo, glassMat);
+	screenGlass.position.set(0, 0, spec.screen.z + spec.screen.glassOffset);
+	screenGlass.scale.y = 0.02;
+	screenGlass.renderOrder = 1;
+	tilt.add(screenGlass);
+
 	// Свет трубки, падающий на рамку изнутри
 	const glow = new THREE.PointLight(new THREE.Color(accent), 0, spec.glow.dist, spec.glow.decay);
 	glow.position.set(0, 0, spec.glow.z);
 	tilt.add(glow);
 
-	// Сияние на стекле. Стоит ПЕРЕД рамкой и не пишет глубину: иначе корпус
-	// его срежет, и вместо света в воздухе получится пятно внутри окна.
-	// Пятно шире окна — свет ложится и на рамку, и чуть за габарит.
-	const glowTex = keep(glowTexture());
-	const glowMat = keep(
+	// Широкий слой имитирует слабый bloom Bruno Simon:
+	// маленькая сила, зато большое размытие. Он остаётся локальным эффектом и
+	// не требует двух полноэкранных render target на каждом кадре.
+	const bloomTex = keep(bloomTexture());
+	const bloomMat = keep(
 		new THREE.MeshBasicMaterial({
-			map: glowTex,
+			map: bloomTex,
 			color: new THREE.Color(accent),
 			transparent: true,
 			opacity: 0,
@@ -257,13 +277,13 @@ export function buildCabinet(spec: ShapeSpec, mats: Materials, accent: string): 
 			toneMapped: false,
 		}),
 	);
-	const screenGlow = new THREE.Mesh(
-		keep(new THREE.PlaneGeometry(spec.halo.w, spec.halo.h)),
-		glowMat,
+	const screenBloom = new THREE.Mesh(
+		keep(new THREE.PlaneGeometry(spec.bloom.w, spec.bloom.h)),
+		bloomMat,
 	);
-	screenGlow.position.set(0, 0, spec.halo.z);
-	screenGlow.renderOrder = 2;
-	tilt.add(screenGlow);
+	screenBloom.position.set(0, 0, spec.bloom.z);
+	screenBloom.renderOrder = 2;
+	tilt.add(screenBloom);
 
 	// Антенны — комнатные «рожки»: приплюснутое блюдце с хромированным винтом
 	// по центру, из него два телескопических штыря узким домиком. У каждого
@@ -370,5 +390,15 @@ export function buildCabinet(spec: ShapeSpec, mats: Materials, accent: string): 
 		}
 	}
 
-	return { tilt, screen, screenMat, glow, glowMat, antennas, antennaGroup, disposables };
+	return {
+		tilt,
+		screen,
+		screenMat,
+		screenGlass,
+		glow,
+		bloomMat,
+		antennas,
+		antennaGroup,
+		disposables,
+	};
 }
