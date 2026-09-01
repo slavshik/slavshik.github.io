@@ -19,7 +19,7 @@ function hang(curl: number, steps = 400): Rope {
 	const rope = new Rope(ROPE_N, ROPE_SEG);
 	rope.reset(0, 0, ROPE_Z);
 	for (let i = 0; i < steps; i++) {
-		rope.step(FIXED, 0, 0, ROPE_Z, DEFAULTS.ropeG, DEFAULTS.ropeDamp, curl);
+		rope.step(FIXED, 0, 0, ROPE_Z, DEFAULTS.ropeG, DEFAULTS.ropeDamp, curl, null);
 	}
 	return rope;
 }

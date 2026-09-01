@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import { DEFAULTS, FIXED, ROPE_N, ROPE_SEG, ROPE_Z } from '../../src/tv/constants.js';
+import {
+	BODY_H,
+	DEFAULTS,
+	FIXED,
+	FOOT_H,
+	HALF_W,
+	ROPE_N,
+	ROPE_SEG,
+	ROPE_Z,
+} from '../../src/tv/constants.js';
 import { Rope, ropeMoving } from '../../src/tv/physics.js';
 
 function point(rope: Rope, i: number): { x: number; y: number; z: number } {
@@ -21,7 +30,7 @@ function linkLengths(rope: Rope): number[] {
    глубине только мешала бы им читаться. Про неё — отдельный тест. */
 function settle(rope: Rope, ax: number, ay: number, steps: number, curl = 0): void {
 	for (let i = 0; i < steps; i++) {
-		rope.step(FIXED, ax, ay, ROPE_Z, DEFAULTS.ropeG, DEFAULTS.ropeDamp, curl);
+		rope.step(FIXED, ax, ay, ROPE_Z, DEFAULTS.ropeG, DEFAULTS.ropeDamp, curl, null);
 	}
 }
 
@@ -70,6 +79,7 @@ describe('Rope', () => {
 				DEFAULTS.ropeG,
 				DEFAULTS.ropeDamp,
 				0,
+				null,
 			);
 		}
 
@@ -115,5 +125,73 @@ describe('Rope', () => {
 
 		const after = point(rope, ROPE_N - 1);
 		expect(Math.hypot(after.x - before.x, after.y - before.y)).toBeGreaterThan(0.01);
+	});
+});
+
+describe('корпус как препятствие', () => {
+	/* Коробка стоит в начале координат, невёрнутая: HALF_W = 0.55 по X,
+	   полувысота с ножками — 0.462 вниз от центра масс, сдвинутого вниз на
+	   пол-ножки. Провода тут нет, проверяется чистая выталкивающая связь. */
+	const box = { x: 0, y: 0, th: 0, skip: 0, pad: 0, tailPad: 0 };
+	/* Коробка — корпус вместе с ножками, её центр на пол-ножки ниже центра
+	   масс, отсюда и полувысота. Числом не вписываю нарочно: разъедется с
+	   constants.ts — и тест начнёт врать, а не падать. */
+	const HY = BODY_H / 2 + FOOT_H / 2;
+
+	function at(x: number, y: number, z = ROPE_Z): Rope {
+		const rope = new Rope(ROPE_N, ROPE_SEG);
+		for (let i = 0; i < ROPE_N; i++) {
+			rope.p[i * 3] = x;
+			rope.p[i * 3 + 1] = y;
+			rope.p[i * 3 + 2] = z;
+		}
+		return rope;
+	}
+
+	it('точку внутри выталкивает наружу', () => {
+		const rope = at(0.1, -0.1);
+		rope.pushOutOfBox(box);
+		const p = point(rope, 5);
+		const outX = Math.abs(p.x) >= HALF_W - 1e-6;
+		const outY = Math.abs(p.y + FOOT_H / 2) >= HY - 1e-6;
+		expect(outX || outY).toBe(true);
+	});
+
+	it('точку снаружи не трогает', () => {
+		const rope = at(2, 2);
+		rope.pushOutOfBox(box);
+		expect(point(rope, 5).x).toBeCloseTo(2, 6);
+		expect(point(rope, 5).y).toBeCloseTo(2, 6);
+	});
+
+	it('выталкивает по ближней грани, а не по дальней', () => {
+		// Точка у правого борта: до него 0.05, до дна — куда дальше
+		const rope = at(0.5, -0.05);
+		rope.pushOutOfBox(box);
+		const p = point(rope, 5);
+		expect(p.x).toBeGreaterThan(0.5);
+		expect(p.y).toBeCloseTo(-0.05, 6);
+	});
+
+	it('глубина учитывается: за задней стенкой корпуса нет', () => {
+		const rope = at(0, 0, -5);
+		rope.pushOutOfBox(box);
+		expect(point(rope, 5).x).toBeCloseTo(0, 6);
+		expect(point(rope, 5).y).toBeCloseTo(0, 6);
+	});
+
+	it('skip оставляет первые точки внутри — провод выходит из корпуса', () => {
+		const rope = at(0.1, -0.1);
+		rope.pushOutOfBox({ ...box, skip: 3 });
+		// Выталкивает тут по Y: до дна ближе, чем до борта
+		expect(point(rope, 0).y).toBeCloseTo(-0.1, 6);
+		expect(point(rope, 2).y).toBeCloseTo(-0.1, 6);
+		expect(point(rope, 3).y).toBeLessThan(-0.4);
+	});
+
+	it('вилка толще звена, поэтому отходит дальше', () => {
+		const rope = at(0.5, -0.05);
+		rope.pushOutOfBox({ ...box, tailPad: 0.11 });
+		expect(point(rope, ROPE_N - 1).x).toBeGreaterThan(point(rope, 5).x);
 	});
 });

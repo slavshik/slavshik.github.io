@@ -6,7 +6,19 @@
  * браузера и без WebGL.
  */
 
-import { ANCHOR_X, ANCHOR_Y, HALF_H, HALF_W, ROPE_N, ROPE_Z, type TvParams } from './constants.js';
+import {
+	ANCHOR_X,
+	ANCHOR_Y,
+	BODY_D,
+	BODY_H,
+	FOOT_H,
+	HALF_H,
+	HALF_W,
+	ROPE_N,
+	ROPE_RAD,
+	ROPE_Z,
+	type TvParams,
+} from './constants.js';
 
 /** Единственная причина, по которой сюда раньше затягивался весь three. */
 export function clamp(v: number, lo: number, hi: number): number {
@@ -29,6 +41,25 @@ export function clamp(v: number, lo: number, hi: number): number {
  * Вилка на конце висит в воздухе и никуда не воткнута — в этом вся шутка,
  * поэтому нижний конец принципиально свободен, ни к чему не привязан.
  */
+/**
+ * Корпус как препятствие для провода: повёрнутая коробка.
+ *
+ * Провод выходит из корпуса, поэтому первые звенья законно внутри — их и
+ * пропускает skip. Толщина считается на точку: у провода это его радиус, у
+ * вилки на конце — её собственный, заметно больший.
+ */
+export interface BodyBox {
+	x: number;
+	y: number;
+	th: number;
+	/** Сколько первых точек не проверять: они внутри корпуса по делу. */
+	skip: number;
+	/** Полутолщина провода. */
+	pad: number;
+	/** Полуразмер вилки: она куда толще звена. */
+	tailPad: number;
+}
+
 export class Rope {
 	readonly n: number;
 	readonly seg: number;
@@ -73,6 +104,7 @@ export class Rope {
 		g: number,
 		damp: number,
 		curl: number,
+		box: BodyBox | null,
 	): void {
 		const { p, q, n, seg } = this;
 
@@ -146,6 +178,60 @@ export class Rope {
 					p[b + 2] = p[b + 2]! - dz;
 				}
 			}
+			// Корпус решается в том же цикле, что и длины звеньев, и строго
+			// ПОСЛЕ них. Наоборот не работает: связи — последнее, что трогает
+			// точку за проход, и они затаскивают вытолкнутую обратно внутрь.
+			// В этом порядке замер даёт провал 0.377 при полуширине корпуса
+			// 0.55, то есть вилка проходит почти до середины.
+			if (box) this.pushOutOfBox(box);
+		}
+	}
+
+	/**
+	 * Вытолкнуть точки провода наружу из коробки корпуса.
+	 *
+	 * Точка переводится в систему корпуса, где коробка выровнена по осям, и
+	 * проверяется по трём осям сразу — по Z тоже: провод живёт на своей
+	 * глубине, и если бы он уходил за заднюю стенку, толкать его было бы
+	 * неоткуда и незачем.
+	 *
+	 * Выталкивание идёт только по X или Y, по той оси, откуда ближе. По Z
+	 * нарочно нет: провод болтается в узком слое около своей глубины, и
+	 * толчок вдоль Z швырнул бы его за корпус — на картинке это выглядит как
+	 * прыжок, а не как столкновение.
+	 *
+	 * Толкается только провод: корпус тяжёлый и на шнур не отзывается. Это
+	 * упрощение, но честное — обратная сила от провода была бы на порядок
+	 * меньше всего, что уже действует на корпус.
+	 */
+	pushOutOfBox(box: BodyBox): void {
+		const { p, n } = this;
+		const c = Math.cos(box.th);
+		const s = Math.sin(box.th);
+		// Коробка — корпус вместе с ножками, поэтому её центр ниже центра масс
+		const cy = box.y - FOOT_H / 2;
+		const hy = BODY_H / 2 + FOOT_H / 2;
+		for (let i = box.skip; i < n; i++) {
+			const o = i * 3;
+			const r = i === n - 1 ? box.tailPad : box.pad;
+			const dx = p[o]! - box.x;
+			const dy = p[o + 1]! - cy;
+			const lx = dx * c + dy * s;
+			const ly = -dx * s + dy * c;
+			// Насколько точка утоплена по каждой оси; ноль или меньше — снаружи
+			const ox = HALF_W + r - Math.abs(lx);
+			if (ox <= 0) continue;
+			const oy = hy + r - Math.abs(ly);
+			if (oy <= 0) continue;
+			if (BODY_D / 2 + r - Math.abs(p[o + 2]!) <= 0) continue;
+
+			let nx = lx;
+			let ny = ly;
+			if (ox <= oy) nx += (lx < 0 ? -1 : 1) * ox;
+			else ny += (ly < 0 ? -1 : 1) * oy;
+
+			p[o] = box.x + nx * c - ny * s;
+			p[o + 1] = cy + nx * s + ny * c;
 		}
 	}
 }
@@ -439,7 +525,17 @@ export function stepWorld(w: PhysicsWorld, dt: number): number {
 	}
 
 	const a = anchorAt(S.x, S.y, S.th);
-	rope.step(dt, a.x, a.y, ROPE_Z, params.ropeG, params.ropeDamp, params.ropeCurl);
+	// Корпус как препятствие: провод и вилка сквозь него больше не летают.
+	// Первые два звена пропущены — провод выходит из корпуса, и они внутри
+	// по делу: якорь сидит в 0.15 от правого борта и в 0.14 от дна.
+	rope.step(dt, a.x, a.y, ROPE_Z, params.ropeG, params.ropeDamp, params.ropeCurl, {
+		x: S.x,
+		y: S.y,
+		th: S.th,
+		skip: 2,
+		pad: ROPE_RAD,
+		tailPad: params.plugPad,
+	});
 
 	// Кручение — после провода: защемление считается по свежей касательной.
 	twist.step(dt, clampTwist(rope, S.th), params.twistK, params.twistC, params.plugInertia);

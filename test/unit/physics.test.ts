@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import {
 	ANCHOR_X,
+	BODY_D,
+	BODY_H,
 	ANCHOR_Y,
 	DEFAULTS,
 	FIXED,
+	FOOT_H,
 	HALF_H,
 	HALF_W,
 	ROPE_N,
@@ -19,6 +22,7 @@ import {
 	stepWorld,
 	supportY,
 	Twist,
+	wake,
 	type PhysicsWorld,
 } from '../../src/tv/physics.js';
 
@@ -220,5 +224,53 @@ describe('шаг физики', () => {
 		// ax = -gravity·tiltG, а gravity отрицательна — положительный наклон
 		// уводит корпус вправо.
 		expect(w.state.x).toBeGreaterThan(0);
+	});
+});
+
+describe('провод и корпус', () => {
+	/**
+	 * Насколько глубоко точка сидит внутри коробки корпуса; 0 — снаружи.
+	 *
+	 * Глубину проверять обязательно, и это не педантизм. Первая версия
+	 * замера её игнорировала и показывала провал 0.371 — а виноватая точка
+	 * оказалась на z = −0.536 при задней грани корпуса −0.418, то есть
+	 * честно ЗА телевизором. Провод туда уходит по своей свитости, и рисуется
+	 * он там перекрытым. Без этой проверки тест ловил бы не столкновение, а
+	 * нормальный заход за корпус.
+	 */
+	function penetration(w: PhysicsWorld, i: number): number {
+		const S = w.state;
+		const c = Math.cos(S.th);
+		const s = Math.sin(S.th);
+		const dx = w.rope.p[i * 3]! - S.x;
+		const dy = w.rope.p[i * 3 + 1]! - (S.y - FOOT_H / 2);
+		const lx = dx * c + dy * s;
+		const ly = -dx * s + dy * c;
+		const ox = HALF_W - Math.abs(lx);
+		const oy = BODY_H / 2 + FOOT_H / 2 - Math.abs(ly);
+		const oz = BODY_D / 2 - Math.abs(w.rope.p[i * 3 + 2]!);
+		return ox > 0 && oy > 0 && oz > 0 ? Math.min(ox, oy) : 0;
+	}
+
+	it('вилку не протаскивает сквозь корпус, как её ни раскачивай', () => {
+		const w = makeWorld();
+		let worst = 0;
+		// Серия пинков в разные стороны: одиночный не загоняет вилку в корпус
+		for (let kick = 0; kick < 6; kick++) {
+			wake(w.state);
+			w.state.vx = kick % 2 ? 4.5 : -4.5;
+			w.state.vy = DEFAULTS.kickV;
+			w.state.om = kick % 2 ? 7 : -7;
+			w.state.grounded = false;
+			for (let i = 0; i < 400; i++) {
+				stepWorld(w, FIXED);
+				// Первые два звена внутри по делу — их пропускает skip
+				for (let j = 2; j < ROPE_N; j++) worst = Math.max(worst, penetration(w, j));
+			}
+		}
+		// Связи звеньев тянут точку обратно между проходами, поэтому речь о
+		// «не проваливается», а не «идеально снаружи»: полсантиметра сцены
+		// при корпусе шириной 1.1 не видно.
+		expect(worst).toBeLessThan(0.05);
 	});
 });
