@@ -107,6 +107,53 @@ export function ropeMoving(rope: Rope): boolean {
 	);
 }
 
+/* ── Закрутка вилки ─────────────────────────────────────────────────────── */
+
+/** Поворот вилки вокруг оси провода: угол и угловая скорость. */
+export interface SpinState {
+	a: number;
+	v: number;
+}
+
+export function createSpinState(): SpinState {
+	return { a: 0, v: 0 };
+}
+
+/**
+ * Вилка на шнуре — крутильный маятник.
+ *
+ * Момент берётся от поперечной скорости нижней точки провода: повело
+ * телевизор вбок — вилку закрутило вокруг оси шнура. Пока провод висит
+ * ровно, момента нет и крутить нечему.
+ *
+ * Шнур тянет назад к нулю — настоящий возвращается тем же путём, каким его
+ * закрутили, а не доворачивается до ближайшего оборота. Поэтому в покое
+ * широкая грань сама встаёт к зрителю, а не застывает ребром, и кадр всегда
+ * приходит в одно и то же положение. Сильный пинок при этом успевает
+ * провернуть вилку дальше полуоборота — там пружина её и подхватывает.
+ *
+ * Вязкость берётся как exp(-c·dt), а не умножением на константу: шаг
+ * фиксированный, но подстраховка от переменного dt стоит один exp на кадр.
+ */
+export function stepSpin(s: SpinState, dt: number, drive: number, p: TvParams): void {
+	s.v += (drive * p.spinDrive - s.a * p.spinK) * dt;
+	s.v *= Math.exp(-p.spinC * dt);
+	s.a += s.v * dt;
+}
+
+/**
+ * Вилка ещё вертится — значит, физике спать рано.
+ *
+ * Порог нарочно крупный. 0.06 рад — три с половиной градуса, а вилка на
+ * экране шириной в три десятка пикселей: такой доворот меняет её ширину на
+ * сотые доли пикселя. Затухание же тянется долго, и по тонкому порогу
+ * телевизор не засыпал лишних пять секунд, гоняя кадры впустую. При
+ * засыпании угол всё равно добивается в ноль.
+ */
+export function spinMoving(s: SpinState): boolean {
+	return Math.abs(s.v) > 0.12 || Math.abs(s.a) > 0.06;
+}
+
 /* ── Корпус ─────────────────────────────────────────────────────────────── */
 
 export interface BodyState {
@@ -147,6 +194,7 @@ export interface PhysicsWorld {
 	drag: DragState;
 	antennas: AntennaState[];
 	rope: Rope;
+	spin: SpinState;
 }
 
 export function createBodyState(): BodyState {
@@ -193,7 +241,7 @@ export function wake(state: BodyState): void {
  * Вспышку экрана от удара зажигает вызывающий: экран — это уже рендер.
  */
 export function stepWorld(w: PhysicsWorld, dt: number): number {
-	const { state: S, params, env, drag, antennas, rope } = w;
+	const { state: S, params, env, drag, antennas, rope, spin } = w;
 
 	let ax = -params.gravity * env.tiltG;
 	let ay = params.gravity;
@@ -272,7 +320,8 @@ export function stepWorld(w: PhysicsWorld, dt: number): number {
 		Math.abs(S.om) < 0.012 &&
 		Math.abs(S.th) < 0.01 &&
 		Math.abs(S.x - env.homeX) < 0.01 &&
-		!ropeMoving(rope);
+		!ropeMoving(rope) &&
+		!spinMoving(spin);
 	if (still) {
 		S.sleepFor += dt;
 		if (S.sleepFor > 0.5) {
@@ -280,6 +329,9 @@ export function stepWorld(w: PhysicsWorld, dt: number): number {
 			S.y = HALF_H;
 			S.th = 0;
 			S.vx = S.vy = S.om = 0;
+			// Закрутку добиваем в ноль вместе с остальным: спящий кадр обязан
+			// быть одним и тем же, иначе вилка застынет там, где её застали.
+			spin.a = spin.v = 0;
 			S.sleeping = true;
 		}
 	} else {
@@ -297,6 +349,11 @@ export function stepWorld(w: PhysicsWorld, dt: number): number {
 
 	const a = anchorAt(S.x, S.y, S.th);
 	rope.step(dt, a.x, a.y, params.ropeG, params.ropeDamp);
+
+	// Закрутка идёт после провода: момент снимается с уже посчитанного шага
+	// нижней точки, поделённого на dt, то есть с её поперечной скорости.
+	const tail = (ROPE_N - 1) * 2;
+	stepSpin(spin, dt, (rope.p[tail]! - rope.q[tail]!) / dt, params);
 
 	return impact;
 }

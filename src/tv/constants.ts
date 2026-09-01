@@ -54,6 +54,10 @@ export interface TvParams {
 	antLever: number;
 	ropeG: number;
 	ropeDamp: number;
+	/* Закрутка вилки: момент от рывка, возврат шнура и вязкость. */
+	spinDrive: number;
+	spinK: number;
+	spinC: number;
 	dropY: number;
 	homeGap: number;
 	floorGap: number;
@@ -80,6 +84,9 @@ export const DEFAULTS: TvParams = {
 	antLever: 0.55,
 	ropeG: 18.0, // гравитация проводка
 	ropeDamp: 0.988, // сохранение скорости в верле
+	spinDrive: 16.0, // момент закрутки на единицу поперечной скорости вилки
+	spinK: 9.0, // с какой силой шнур раскручивается обратно
+	spinC: 1.4, // вязкость закрутки
 	dropY: 1.6, // высота падения при загрузке, в высотах телевизора
 	homeGap: 10.0, // px между правым краем имени и левым бортом корпуса
 	floorGap: 0.0, // px, на сколько поднять ножки над низом фамилии;

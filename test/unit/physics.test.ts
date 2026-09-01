@@ -17,6 +17,7 @@ import {
 	createBodyState,
 	stepWorld,
 	supportY,
+	createSpinState,
 	type PhysicsWorld,
 } from '../../src/tv/physics.js';
 
@@ -38,6 +39,7 @@ function makeWorld(overrides: Partial<TvParams> = {}): PhysicsWorld {
 			{ a: 0, av: 0 },
 			{ a: 0, av: 0 },
 		],
+		spin: createSpinState(),
 		rope,
 	};
 }

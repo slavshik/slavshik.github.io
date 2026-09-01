@@ -42,6 +42,7 @@ import {
 	Rope,
 	anchorAt,
 	createBodyState,
+	createSpinState,
 	stepWorld,
 	wake as wakeState,
 	type BodyState,
@@ -132,6 +133,7 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 	if (cordMap) cordMap.anisotropy = renderer.capabilities.getMaxAnisotropy();
 
 	const rope = new Rope(ROPE_N, ROPE_SEG);
+	const spin = createSpinState();
 
 	const shadowTex = shadowTexture();
 	const shadowMat = new THREE.MeshBasicMaterial({
@@ -346,7 +348,7 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 
 	/* ── Шаг физики ─────────────────────────────────────────────────────── */
 
-	const world = { state: S, params, env, drag: input.drag, antennas: tv.antennas, rope };
+	const world = { state: S, params, env, drag: input.drag, antennas: tv.antennas, rope, spin };
 
 	function physicsStep(dt: number): void {
 		const impact = stepWorld(world, dt);
@@ -425,6 +427,12 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 		const dx = rope.p[tail]! - rope.p[tail - 2]!;
 		const dy = rope.p[tail + 1]! - rope.p[tail - 1]!;
 		tv.plug.position.set(rope.p[tail]!, rope.p[tail + 1]!, ROPE_Z);
+		// Порядок ZYX: Y крутит вилку в её собственной системе, вокруг оси
+		// шнура, и только потом Z доворачивает её по последнему звену. При
+		// порядке по умолчанию закрутка ушла бы в мировую вертикаль и вилку
+		// уводило бы вбок тем сильнее, чем сильнее качнуло.
+		tv.plug.rotation.order = 'ZYX';
+		tv.plug.rotation.y = spin.a;
 		tv.plug.rotation.z = Math.atan2(dy, dx) + Math.PI / 2;
 
 		// Чем выше корпус, тем шире и бледнее пятно
