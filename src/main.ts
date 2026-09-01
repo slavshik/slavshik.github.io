@@ -165,11 +165,26 @@ import type { TvWhy } from './analytics.js';
 		broadcastUrl = (seq: number) => `${HIT_URL}${query}&tex=1&seq=${seq}`;
 	}
 
+	/* ?aqa=1&clip=1 — снимок с картинкой на экране вместо снега.
+	   Только для тестов: адрес фиксированный и локальный, на живом сайте по
+	   нему ничего не лежит, а перехватывает его сам тест. Кадр обязан быть
+	   раскодирован до монтирования, иначе замороженный рендер успеет
+	   нарисоваться по пустой текстуре. */
+	const clipShot = aqa && q.get('clip') === '1';
+
 	if (wanted && stage) {
 		const boot = (): void => {
-			import('./tv/index.js')
-				.then((m) => {
-					m.mount(stage, { frozen: aqa, broadcastUrl });
+			const still = clipShot
+				? new Promise<HTMLImageElement | null>((res) => {
+						const img = new Image();
+						img.onload = () => res(img);
+						img.onerror = () => res(null);
+						img.src = '/aqa-clip.png';
+					})
+				: Promise.resolve(null);
+			Promise.all([import('./tv/index.js'), still])
+				.then(([m, stillClip]) => {
+					m.mount(stage, { frozen: aqa, broadcastUrl, stillClip });
 					// Класс — только после удачного монтирования: подложка под именем
 					// нужна ровно тогда, когда за именем правда что-то летает.
 					document.documentElement.classList.add('tv-on');

@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url';
+
 import { expect, test, type Page } from '@playwright/test';
 
 /*
@@ -118,5 +120,31 @@ test.describe('снимки', () => {
 		await page.goto('/?aqa=1');
 		await page.waitForSelector('html[data-tv="ready"]');
 		await expect(page).toHaveScreenshot('page-tv-dark.png', { fullPage: true });
+	});
+
+	/*
+	 * Экран с передачей, а не со снегом.
+	 *
+	 * Снимки выше ловят только шум: в режиме ?aqa=1 передачи нет, и весь путь
+	 * шейдера при uTexMix = 1 — контраст, насыщение, строчная развёртка поверх
+	 * картинки, свечение от неё — не проверялся ничем. Ровно там и жил муар
+	 * развёртки, который на снегу не виден, потому что снег сам себе шум.
+	 *
+	 * На экране испытательная таблица, а не фотография, и это нарочно. Живая
+	 * передача — видео с эндпоинта, и в снимке она недетерминирована: кодек,
+	 * момент декодирования, номер кадра. Таблица же и детерминирована, и
+	 * показывает больше: клин из линий с падающим шагом говорит, какую деталь
+	 * съедает развёртка, а ступени яркости — что выбивает свечение.
+	 *
+	 * Наружу при этом ничего не уходит: адрес локальный и его подменяет сам
+	 * тест, а на живом сайте по нему ничего не лежит.
+	 */
+	test('на экране передача, а не снег', async ({ page }) => {
+		await page.route('**/aqa-clip.png', (route) =>
+			route.fulfill({ path: fileURLToPath(new URL('fixtures/clip.png', import.meta.url)) }),
+		);
+		await page.goto('/?aqa=1&clip=1');
+		await page.waitForSelector('html[data-tv="ready"]');
+		await expect(page).toHaveScreenshot('page-tv-clip.png', { fullPage: true });
 	});
 });

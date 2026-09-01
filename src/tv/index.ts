@@ -62,6 +62,14 @@ export interface MountOptions {
 	 * аналитика собирается снаружи. Пусто или неудача — на экране снег.
 	 */
 	broadcastUrl?: ((seq: number) => string) | null;
+	/**
+	 * Неподвижный кадр на экран вместо передачи. Только для скриншотных
+	 * тестов: настоящая передача — это видео с эндпоинта, а видео в снимке
+	 * недетерминировано (кодек, момент декодирования, кадр). Картинка же
+	 * ложится в ту же uTex при uTexMix = 1, то есть проверяется ровно тот
+	 * путь шейдера, по которому идёт живая передача.
+	 */
+	stillClip?: TexImageSource | null;
 }
 
 /** Ссылки на внутренности. Стенду — да, продакшену — нет. */
@@ -595,6 +603,19 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 		const a = anchorAt(S.x, S.y, S.th);
 		rope.reset(a.x, a.y, ROPE_Z);
 		twist.reset();
+	}
+
+	/* Неподвижный кадр для снимков: подставляется прямо в uTex и включает
+	   передачу на полную, минуя тюнер и его ступени захвата. */
+	if (opts.stillClip) {
+		const still = new THREE.Texture(opts.stillClip);
+		still.colorSpace = THREE.SRGBColorSpace;
+		still.needsUpdate = true;
+		tv.screenMat.uniforms.uTex!.value = still;
+		tv.disposables.push(still);
+		texWanted = 1;
+		texMix = 1;
+		lockT = -1;
 	}
 
 	if (frozen) {
