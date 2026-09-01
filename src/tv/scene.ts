@@ -11,7 +11,7 @@ import { buildCabinet, buildMaterials, type AntennaPart, type Disposable } from 
 import { BODY_D, BODY_H, BODY_W, FOOT_H, ROPE_N, ROPE_R, ROPE_RAD, ROPE_Z } from './constants.js';
 import { LOOK, type CordSpec } from './look.js';
 import type { Palette } from './palette.js';
-import type { Rope } from './physics.js';
+import type { Rope, Twist } from './physics.js';
 
 export type { AntennaPart } from './cabinet.js';
 
@@ -71,36 +71,92 @@ function makeRopeMesh(mat: THREE.Material): { mesh: THREE.Mesh; geo: THREE.Buffe
 	return { mesh: new THREE.Mesh(geo, mat), geo };
 }
 
-export function updateRopeMesh(geo: THREE.BufferGeometry, rope: Rope): void {
+/**
+ * Пересчёт трубки провода по цепочке.
+ *
+ * Рамка вдоль трубки строится параллельным переносом: нормаль следующего
+ * кольца — это нормаль предыдущего, с которой снята составляющая вдоль новой
+ * касательной. Формулы Френе тут не годятся вовсе: на прямом участке
+ * кривизна нулевая, её нормаль не определена, и трубку в таких местах
+ * перекручивает рывком. Перенос же не помнит ничего, кроме предыдущего
+ * кольца, и на прямом участке просто ничего не меняет.
+ *
+ * Поверх переноса ложится собственная закрутка провода — угол из Twist.
+ * Именно она поворачивает материал трубки вокруг её оси, и именно её видно
+ * на оплётке: пунктир едет по спирали, когда провод закручивают.
+ */
+export function updateRopeMesh(geo: THREE.BufferGeometry, rope: Rope, twist: Twist): void {
 	const pos = (geo.attributes.position as THREE.BufferAttribute).array as Float32Array;
 	const nrm = (geo.attributes.normal as THREE.BufferAttribute).array as Float32Array;
 	const p = rope.p;
+
+	// Затравка переноса: любой вектор, заведомо не параллельный касательной.
+	let nx = 0;
+	let ny = 0;
+	let nz = 1;
+
 	for (let i = 0; i < ROPE_N; i++) {
-		// Касательная по соседям, нормаль — перпендикуляр в той же плоскости
-		const i0 = Math.max(0, i - 1) * 2;
-		const i1 = Math.min(ROPE_N - 1, i + 1) * 2;
+		// Касательная по соседям — на концах по одному соседу
+		const i0 = Math.max(0, i - 1) * 3;
+		const i1 = Math.min(ROPE_N - 1, i + 1) * 3;
 		let tx = p[i1]! - p[i0]!;
 		let ty = p[i1 + 1]! - p[i0 + 1]!;
-		const tl = Math.hypot(tx, ty) || 1;
+		let tz = p[i1 + 2]! - p[i0 + 2]!;
+		const tl = Math.hypot(tx, ty, tz) || 1;
 		tx /= tl;
 		ty /= tl;
-		const nx = -ty;
-		const ny = tx; // в плоскости XY
-		const cx = p[i * 2]!;
-		const cy = p[i * 2 + 1]!;
+		tz /= tl;
+
+		// Перенос: снять с нормали составляющую вдоль касательной
+		let d = nx * tx + ny * ty + nz * tz;
+		nx -= tx * d;
+		ny -= ty * d;
+		nz -= tz * d;
+		let nl = Math.hypot(nx, ny, nz);
+		if (nl < 1e-4) {
+			// Нормаль легла на касательную — взять любую другую и повторить
+			nx = ty;
+			ny = -tx;
+			nz = 0;
+			d = nx * tx + ny * ty + nz * tz;
+			nx -= tx * d;
+			ny -= ty * d;
+			nz -= tz * d;
+			nl = Math.hypot(nx, ny, nz) || 1;
+		}
+		nx /= nl;
+		ny /= nl;
+		nz /= nl;
+
+		// Бинормаль дополняет рамку до правой тройки
+		const bx = ty * nz - tz * ny;
+		const by = tz * nx - tx * nz;
+		const bz = tx * ny - ty * nx;
+
+		// Собственная закрутка провода в этой точке
+		const ca = Math.cos(twist.a[i]!);
+		const sa = Math.sin(twist.a[i]!);
+		const mx = nx * ca + bx * sa;
+		const my = ny * ca + by * sa;
+		const mz = nz * ca + bz * sa;
+		const lx = -nx * sa + bx * ca;
+		const ly = -ny * sa + by * ca;
+		const lz = -nz * sa + bz * ca;
+
+		const cx = p[i * 3]!;
+		const cy = p[i * 3 + 1]!;
+		const cz = p[i * 3 + 2]!;
 		for (let j = 0; j < ROPE_COLS; j++) {
-			// Замыкающий столбец — тот же угол, что и нулевой: точка одна,
-			// а вершины две, и различает их только развёртка.
-			const a = ((j % ROPE_R) / ROPE_R) * Math.PI * 2;
-			const ca = Math.cos(a);
-			const sa = Math.sin(a);
-			const ux = nx * ca;
-			const uy = ny * ca;
-			const uz = sa; // бинормаль = ось Z
+			const ang = ((j % ROPE_R) / ROPE_R) * Math.PI * 2;
+			const c = Math.cos(ang);
+			const sn = Math.sin(ang);
+			const ux = mx * c + lx * sn;
+			const uy = my * c + ly * sn;
+			const uz = mz * c + lz * sn;
 			const o = (i * ROPE_COLS + j) * 3;
 			pos[o] = cx + ux * ROPE_RAD;
 			pos[o + 1] = cy + uy * ROPE_RAD;
-			pos[o + 2] = ROPE_Z + uz * ROPE_RAD;
+			pos[o + 2] = cz + uz * ROPE_RAD;
 			nrm[o] = ux;
 			nrm[o + 1] = uy;
 			nrm[o + 2] = uz;
@@ -156,6 +212,7 @@ export function braidTexture(spec: CordSpec): THREE.CanvasTexture {
 	return tex;
 }
 
+/** Точка на ребре from→to, отступив от from на r (но не дальше середины). */
 /** Точка на ребре from→to, отступив от from на r (но не дальше середины). */
 function alongEdge(from: [number, number], to: [number, number], r: number): [number, number] {
 	const dx = to[0] - from[0];

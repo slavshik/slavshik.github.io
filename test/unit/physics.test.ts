@@ -9,6 +9,7 @@ import {
 	HALF_W,
 	ROPE_N,
 	ROPE_SEG,
+	ROPE_Z,
 	type TvParams,
 } from '../../src/tv/constants.js';
 import {
@@ -17,7 +18,7 @@ import {
 	createBodyState,
 	stepWorld,
 	supportY,
-	createSpinState,
+	Twist,
 	type PhysicsWorld,
 } from '../../src/tv/physics.js';
 
@@ -29,7 +30,7 @@ function makeWorld(overrides: Partial<TvParams> = {}): PhysicsWorld {
 	const state = createBodyState();
 	const rope = new Rope(ROPE_N, ROPE_SEG);
 	const a = anchorAt(state.x, state.y, state.th);
-	rope.reset(a.x, a.y);
+	rope.reset(a.x, a.y, ROPE_Z);
 	return {
 		state,
 		params: { ...DEFAULTS, ...overrides },
@@ -39,7 +40,7 @@ function makeWorld(overrides: Partial<TvParams> = {}): PhysicsWorld {
 			{ a: 0, av: 0 },
 			{ a: 0, av: 0 },
 		],
-		spin: createSpinState(),
+		twist: new Twist(ROPE_N),
 		rope,
 	};
 }

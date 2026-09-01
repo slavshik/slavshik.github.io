@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { DEFAULTS, FIXED, ROPE_N, ROPE_SEG } from '../../src/tv/constants.js';
+import { DEFAULTS, FIXED, ROPE_N, ROPE_SEG, ROPE_Z } from '../../src/tv/constants.js';
 import { Rope, ropeMoving } from '../../src/tv/physics.js';
 
-function point(rope: Rope, i: number): { x: number; y: number } {
-	return { x: rope.p[i * 2]!, y: rope.p[i * 2 + 1]! };
+function point(rope: Rope, i: number): { x: number; y: number; z: number } {
+	return { x: rope.p[i * 3]!, y: rope.p[i * 3 + 1]!, z: rope.p[i * 3 + 2]! };
 }
 
 function linkLengths(rope: Rope): number[] {
@@ -12,21 +12,23 @@ function linkLengths(rope: Rope): number[] {
 	for (let i = 0; i < rope.n - 1; i++) {
 		const a = point(rope, i);
 		const b = point(rope, i + 1);
-		out.push(Math.hypot(b.x - a.x, b.y - a.y));
+		out.push(Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z));
 	}
 	return out;
 }
 
-function settle(rope: Rope, ax: number, ay: number, steps: number): void {
+/* Свитость тут нулевая: эти тесты про связи и провисание, а волна по
+   глубине только мешала бы им читаться. Про неё — отдельный тест. */
+function settle(rope: Rope, ax: number, ay: number, steps: number, curl = 0): void {
 	for (let i = 0; i < steps; i++) {
-		rope.step(FIXED, ax, ay, DEFAULTS.ropeG, DEFAULTS.ropeDamp);
+		rope.step(FIXED, ax, ay, ROPE_Z, DEFAULTS.ropeG, DEFAULTS.ropeDamp, curl);
 	}
 }
 
 describe('Rope', () => {
 	it('reset вешает цепочку прямо вниз от якоря', () => {
 		const rope = new Rope(ROPE_N, ROPE_SEG);
-		rope.reset(1.5, -2);
+		rope.reset(1.5, -2, ROPE_Z);
 
 		// Точки лежат во Float32Array, поэтому сравнение до седьмого знака —
 		// это уже сравнение с точностью самого хранилища.
@@ -39,13 +41,13 @@ describe('Rope', () => {
 
 	it('после reset цепочка неподвижна', () => {
 		const rope = new Rope(ROPE_N, ROPE_SEG);
-		rope.reset(0, 0);
+		rope.reset(0, 0, ROPE_Z);
 		expect(ropeMoving(rope)).toBe(false);
 	});
 
 	it('верхняя точка приколочена к якорю', () => {
 		const rope = new Rope(ROPE_N, ROPE_SEG);
-		rope.reset(0, 0);
+		rope.reset(0, 0, ROPE_Z);
 		settle(rope, 0.7, -0.3, 50);
 
 		const head = point(rope, 0);
@@ -55,12 +57,20 @@ describe('Rope', () => {
 
 	it('звенья не тянутся: длины держатся у номинала', () => {
 		const rope = new Rope(ROPE_N, ROPE_SEG);
-		rope.reset(0, 0);
+		rope.reset(0, 0, ROPE_Z);
 
 		// Якорь качается с той же амплитудой, что даёт настоящий телевизор:
 		// корпус ходит в пределах пары своих ширин и не телепортируется.
 		for (let i = 0; i < 400; i++) {
-			rope.step(FIXED, Math.sin(i / 40) * 0.4, 0, DEFAULTS.ropeG, DEFAULTS.ropeDamp);
+			rope.step(
+				FIXED,
+				Math.sin(i / 40) * 0.4,
+				0,
+				ROPE_Z,
+				DEFAULTS.ropeG,
+				DEFAULTS.ropeDamp,
+				0,
+			);
 		}
 
 		// Восемь проходов по связям — это не жёсткое ограничение, а сходящееся,
@@ -73,7 +83,7 @@ describe('Rope', () => {
 
 	it('рывок якоря раскачивает провод, а покой его успокаивает', () => {
 		const rope = new Rope(ROPE_N, ROPE_SEG);
-		rope.reset(0, 0);
+		rope.reset(0, 0, ROPE_Z);
 
 		settle(rope, 1.5, 0, 20); // якорь дёрнули
 		expect(ropeMoving(rope)).toBe(true);
@@ -84,7 +94,7 @@ describe('Rope', () => {
 
 	it('успокоившись, провод висит под якорем', () => {
 		const rope = new Rope(ROPE_N, ROPE_SEG);
-		rope.reset(0, 0);
+		rope.reset(0, 0, ROPE_Z);
 		settle(rope, 0, 0, 4000);
 
 		const tail = point(rope, ROPE_N - 1);
@@ -98,7 +108,7 @@ describe('Rope', () => {
 
 	it('нижний конец свободен — в этом вся шутка с вилкой', () => {
 		const rope = new Rope(ROPE_N, ROPE_SEG);
-		rope.reset(0, 0);
+		rope.reset(0, 0, ROPE_Z);
 		const before = point(rope, ROPE_N - 1);
 
 		settle(rope, 2.5, 1.5, 30);

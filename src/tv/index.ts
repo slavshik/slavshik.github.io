@@ -42,7 +42,7 @@ import {
 	Rope,
 	anchorAt,
 	createBodyState,
-	createSpinState,
+	Twist,
 	stepWorld,
 	wake as wakeState,
 	type BodyState,
@@ -122,6 +122,13 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 	const rig = new THREE.Group();
 	scene.add(rig);
 
+	// Заготовки под ориентацию вилки: считается каждый кадр, аллокаций быть
+	// не должно.
+	const PLUG_AXIS = new THREE.Vector3(0, -1, 0);
+	const plugDir = new THREE.Vector3();
+	const plugQ = new THREE.Quaternion();
+	const plugTwistQ = new THREE.Quaternion();
+
 	const tv = buildTV(pal);
 	rig.add(tv.body, tv.ropeMesh, tv.plug);
 
@@ -133,7 +140,7 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 	if (cordMap) cordMap.anisotropy = renderer.capabilities.getMaxAnisotropy();
 
 	const rope = new Rope(ROPE_N, ROPE_SEG);
-	const spin = createSpinState();
+	const twist = new Twist(ROPE_N);
 
 	const shadowTex = shadowTexture();
 	const shadowMat = new THREE.MeshBasicMaterial({
@@ -348,7 +355,7 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 
 	/* ── Шаг физики ─────────────────────────────────────────────────────── */
 
-	const world = { state: S, params, env, drag: input.drag, antennas: tv.antennas, rope, spin };
+	const world = { state: S, params, env, drag: input.drag, antennas: tv.antennas, rope, twist };
 
 	function physicsStep(dt: number): void {
 		const impact = stepWorld(world, dt);
@@ -420,20 +427,41 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 		tv.body.rotation.z = prev.th + (S.th - prev.th) * a;
 		for (const ant of tv.antennas) ant.pivot.rotation.z = ant.a;
 
-		updateRopeMesh(tv.ropeGeo, rope);
+		updateRopeMesh(tv.ropeGeo, rope, twist);
 
 		// Вилка садится на последнюю точку и разворачивается по последнему звену
-		const tail = (ROPE_N - 1) * 2;
-		const dx = rope.p[tail]! - rope.p[tail - 2]!;
-		const dy = rope.p[tail + 1]! - rope.p[tail - 1]!;
-		tv.plug.position.set(rope.p[tail]!, rope.p[tail + 1]!, ROPE_Z);
-		// Порядок ZYX: Y крутит вилку в её собственной системе, вокруг оси
-		// шнура, и только потом Z доворачивает её по последнему звену. При
-		// порядке по умолчанию закрутка ушла бы в мировую вертикаль и вилку
-		// уводило бы вбок тем сильнее, чем сильнее качнуло.
-		tv.plug.rotation.order = 'ZYX';
-		tv.plug.rotation.y = spin.a;
-		tv.plug.rotation.z = Math.atan2(dy, dx) + Math.PI / 2;
+		// Вилка садится на последнюю точку. Ориентация — уже не один угол:
+		// провод трёхмерный, и вилку надо и повернуть по последнему звену, и
+		// довернуть вокруг него на собственное кручение провода. Кватернион
+		// из двух поворотов делает это без блокировки осей.
+		const tail = (ROPE_N - 1) * 3;
+		const dx = rope.p[tail]! - rope.p[tail - 3]!;
+		const dy = rope.p[tail + 1]! - rope.p[tail - 2]!;
+		const dz = rope.p[tail + 2]! - rope.p[tail - 1]!;
+		tv.plug.position.set(rope.p[tail]!, rope.p[tail + 1]!, rope.p[tail + 2]!);
+		// Своя ось вилки — вниз: провод входит сверху, штыри смотрят вниз.
+		plugDir.set(dx, dy, dz).normalize();
+		plugQ.setFromUnitVectors(PLUG_AXIS, plugDir);
+		/* Кручение на экране преувеличено, и это сознательно — как и сама
+		   вилка, которая крупнее натуральной в полтора раза.
+
+		   Физика под этим настоящая: провод трёхмерный, у него своя кривизна
+		   покоя, вдоль него идёт крутильная волна, защемлённая в корпусе, и
+		   вилка на конце отзывается с запаздыванием. Но её угол физически
+		   ограничен: у стержня, защемлённого с одного конца и свободного с
+		   другого, без внешнего момента угол в равновесии однороден, то есть
+		   свободный конец просто повторяет защемление. А защемление — это
+		   доля крена корпуса, приходящаяся на ось провода, около 0.15 от него.
+		   Крен в сорок градусов даёт на вилке шесть, и это не лечится ни
+		   жёсткостью, ни вязкостью, ни инерцией: замер даёт те же 0.107 рад
+		   при любых. Шесть градусов на вилке в три десятка пикселей не видно
+		   вовсе.
+
+		   Поэтому угол умножается на twistGain. Множитель врёт про величину и
+		   только про неё: знак, задержка волны, звон и то, когда именно вилку
+		   поведёт, остаются посчитанными. */
+		plugTwistQ.setFromAxisAngle(plugDir, twist.tail * params.twistGain);
+		tv.plug.quaternion.copy(plugTwistQ.multiply(plugQ));
 
 		// Чем выше корпус, тем шире и бледнее пятно
 		const lift = Math.max(0, tv.body.position.y - HALF_H);
@@ -558,7 +586,8 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 	prev.th = S.th;
 	{
 		const a = anchorAt(S.x, S.y, S.th);
-		rope.reset(a.x, a.y);
+		rope.reset(a.x, a.y, ROPE_Z);
+		twist.reset();
 	}
 
 	if (frozen) {
@@ -642,7 +671,9 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 		},
 		resetRope: () => {
 			const a = anchorAt(S.x, S.y, S.th);
-			rope.reset(a.x, a.y);
+			rope.reset(a.x, a.y, ROPE_Z);
+			twist.reset();
+			twist.reset();
 		},
 	};
 
