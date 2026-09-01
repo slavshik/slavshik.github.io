@@ -22,7 +22,6 @@ export interface TvParts {
 	screenMat: THREE.ShaderMaterial;
 	screenGlass: THREE.Mesh;
 	glow: THREE.PointLight;
-	bloomMat: THREE.MeshBasicMaterial;
 	antennas: AntennaPart[];
 	proxy: THREE.Mesh;
 	disposables: Disposable[];
@@ -366,7 +365,6 @@ export function buildTV(pal: Palette): TvParts {
 		screenMat: cab.screenMat,
 		screenGlass: cab.screenGlass,
 		glow: cab.glow,
-		bloomMat: cab.bloomMat,
 		antennas: cab.antennas,
 		proxy,
 		disposables,

@@ -11,6 +11,7 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 
 import type { BodyRole, MaterialSpec, ShapeSpec } from './look.js';
 import type { Palette } from './palette.js';
+import { BLOOM_LAYER } from './bloom.js';
 import { SCREEN_FRAG, SCREEN_VERT } from './shaders.js';
 
 export interface Disposable {
@@ -37,8 +38,6 @@ export interface Cabinet {
 	/** Прозрачный отражающий купол поверх люминофора. */
 	screenGlass: THREE.Mesh;
 	glow: THREE.PointLight;
-	/** Широкий и слабый второй масштаб сияния — дешёвый selective bloom. */
-	bloomMat: THREE.MeshBasicMaterial;
 	antennas: AntennaPart[];
 	/** Вся антенная надстройка одним узлом: блюдце, винт и оба рожка. */
 	antennaGroup: THREE.Group;
@@ -97,30 +96,6 @@ function bulgeScreen(geo: THREE.BufferGeometry, amount: number, power: number): 
 	}
 	pos.needsUpdate = true;
 	geo.computeVertexNormals();
-}
-
-/**
- * Широкая половина bloom. Настоящий постпроцесс размывает яркие пиксели в
- * несколько mip-уровней; телевизору, у которого светится только кинескоп,
- * тот же силуэт дешевле дать вторым эллипсом. Прозрачный центр сохраняет
- * контраст передачи, длинный хвост мягко связывает экран с корпусом и фоном.
- */
-export function bloomTexture(): THREE.CanvasTexture {
-	const c = document.createElement('canvas');
-	c.width = c.height = 128;
-	const ctx = c.getContext('2d')!;
-	const g = ctx.createRadialGradient(64, 64, 4, 64, 64, 64);
-	g.addColorStop(0, 'rgba(255,255,255,0)');
-	g.addColorStop(0.27, 'rgba(255,255,255,0.03)');
-	g.addColorStop(0.43, 'rgba(255,255,255,0.72)');
-	g.addColorStop(0.58, 'rgba(255,255,255,0.32)');
-	g.addColorStop(0.78, 'rgba(255,255,255,0.08)');
-	g.addColorStop(1, 'rgba(255,255,255,0)');
-	ctx.fillStyle = g;
-	ctx.fillRect(0, 0, 128, 128);
-	const tex = new THREE.CanvasTexture(c);
-	tex.colorSpace = THREE.NoColorSpace;
-	return tex;
 }
 
 export function buildMaterials(pal: Palette, spec: Record<BodyRole, MaterialSpec>): Materials {
@@ -228,6 +203,9 @@ export function buildCabinet(spec: ShapeSpec, mats: Materials, accent: string): 
 		}),
 	);
 	const screen = new THREE.Mesh(screenGeo, screenMat);
+	// Люминофор — единственное, что светится само. Слой сияния читает
+	// именно его, поэтому пометка живёт тут, рядом с созданием меша.
+	screen.layers.enable(BLOOM_LAYER);
 	screen.position.set(0, 0, spec.screen.z);
 	screen.scale.y = 0.02; // розжиг растянет до 1
 	tilt.add(screen);
@@ -261,29 +239,6 @@ export function buildCabinet(spec: ShapeSpec, mats: Materials, accent: string): 
 	const glow = new THREE.PointLight(new THREE.Color(accent), 0, spec.glow.dist, spec.glow.decay);
 	glow.position.set(0, 0, spec.glow.z);
 	tilt.add(glow);
-
-	// Широкий слой имитирует слабый bloom Bruno Simon:
-	// маленькая сила, зато большое размытие. Он остаётся локальным эффектом и
-	// не требует двух полноэкранных render target на каждом кадре.
-	const bloomTex = keep(bloomTexture());
-	const bloomMat = keep(
-		new THREE.MeshBasicMaterial({
-			map: bloomTex,
-			color: new THREE.Color(accent),
-			transparent: true,
-			opacity: 0,
-			blending: THREE.AdditiveBlending,
-			depthWrite: false,
-			toneMapped: false,
-		}),
-	);
-	const screenBloom = new THREE.Mesh(
-		keep(new THREE.PlaneGeometry(spec.bloom.w, spec.bloom.h)),
-		bloomMat,
-	);
-	screenBloom.position.set(0, 0, spec.bloom.z);
-	screenBloom.renderOrder = 2;
-	tilt.add(screenBloom);
 
 	// Антенны — комнатные «рожки»: приплюснутое блюдце с хромированным винтом
 	// по центру, из него два телескопических штыря узким домиком. У каждого
@@ -396,7 +351,6 @@ export function buildCabinet(spec: ShapeSpec, mats: Materials, accent: string): 
 		screenMat,
 		screenGlass,
 		glow,
-		bloomMat,
 		antennas,
 		antennaGroup,
 		disposables,

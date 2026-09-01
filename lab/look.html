@@ -328,7 +328,6 @@
       cab.screenGlass.scale.y = 1;
       cab.screenMat.uniforms.uIntensity.value = 1;
       cab.glow.intensity = 0.5;
-      cab.bloomMat.opacity = 0.14;
       root.add(cab.tilt);
       applyView();
       fitCamera();
@@ -393,9 +392,6 @@
         ['лампа Z', 'shape.glow.z', 0.3, 1],
         ['лампа радиус', 'shape.glow.dist', 0.2, 3],
         ['лампа спад', 'shape.glow.decay', 0, 4],
-		['bloom шир.', 'shape.bloom.w', 0.8, 3.5],
-		['bloom выс.', 'shape.bloom.h', 0.5, 2.5],
-		['bloom Z', 'shape.bloom.z', 0.3, 0.8],
       ]],
       ['блюдце и винт', false, [
         ['радиус', 'shape.dish.r', 0.05, 0.35],
@@ -687,16 +683,12 @@
     async function withExportable(fn) {
 	  const wasScreenVisible = cab.screen.visible;
 	  cab.screen.visible = false;
-	  const halos = [];
-	  cab.tilt.traverse((o) => {
-		if (o.isMesh && o.material === cab.bloomMat) halos.push(o);
-	  });
-	  for (const halo of halos) halo.visible = false;
+	  // Гало-меша больше нет: сияние делает пост-обработка, а стенд облика
+	  // рисует корпус без неё — экспорту в GLB/USDZ она всё равно не нужна.
       try {
         return await fn();
       } finally {
 		cab.screen.visible = wasScreenVisible;
-		for (const halo of halos) halo.visible = true;
       }
     }
 

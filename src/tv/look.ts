@@ -60,8 +60,6 @@ export interface ShapeSpec {
 	};
 	/** Свет трубки внутри корпуса. */
 	glow: { z: number; dist: number; decay: number };
-	/** Широкий bloom вокруг трубки; центр прозрачен и картинку не засвечивает. */
-	bloom: { w: number; h: number; z: number };
 	dish: { r: number; squash: number; z: number; sink: number };
 	screw: { rTop: number; rBot: number; h: number; lift: number };
 	antennas: {
@@ -158,7 +156,6 @@ export const LOOK: LookSpec = {
 			glassIor: 1.52,
 		},
 		glow: { z: 1, dist: 0.907, decay: 0.58 },
-		bloom: { w: 2.69675, h: 1.45, z: 0.515 },
 		dish: { r: 0.19, squash: 0.42, z: -0.03, sink: 0.012 },
 		screw: { rTop: 0.019, rBot: 0.026, h: 0.05, lift: 0.012 },
 		antennas: {

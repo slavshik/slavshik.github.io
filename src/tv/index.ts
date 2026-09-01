@@ -35,6 +35,7 @@ import {
 } from './constants.js';
 import { createInput } from './input.js';
 import { createLayout } from './layout.js';
+import { createBloom } from './bloom.js';
 import { createLighting } from './lighting.js';
 import { LOOK } from './look.js';
 import { readPalette, type Palette } from './palette.js';
@@ -118,6 +119,12 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 	camera.position.set(0, 0, CAM_DIST);
 
 	const lighting = createLighting(scene, renderer, pal, LOOK.lights);
+
+	/* Сияние трубки — пост-обработкой, а не мешем перед экраном. Форма его
+	   берётся из уже нарисованного кадра, поэтому оно само следует за
+	   картинкой: тёмный кадр почти не светит, снег светит ровно. Мигает им
+	   uFlicker — розжиг, вспышка от удара, срыв кадра. */
+	const bloom = createBloom(renderer);
 
 	const rig = new THREE.Group();
 	scene.add(rig);
@@ -333,9 +340,9 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 		u.uTexMix!.value = texMix;
 		u.uIntensity!.value = ease + flashV;
 		tv.glow.intensity = (0.5 + flashV * 2.5) * ease;
-		// Центр bloom прозрачен: эффект чувствуется в воздухе вокруг трубки, но
-		// не поднимает чёрный уровень и не съедает контраст самой передачи.
-		tv.bloomMat.opacity = (0.09 + 0.14 * texMix + flashV * 0.24) * ease;
+		// Яркость сияния: розжиг, передача чуть ярче снега, удар вспыхивает.
+		// Форма сюда не приходит — её даёт сам кадр.
+		bloom.setFlicker((0.55 + 0.45 * texMix + flashV * 1.7) * ease);
 	}
 
 	/* ── Ввод ───────────────────────────────────────────────────────────── */
@@ -380,9 +387,10 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 		params,
 		state: S,
 		env,
+		onResize: (w, h, dpr) => bloom.setSize(w, h, dpr),
 		onResized: () => {
 			syncMeshes(1);
-			renderer.render(scene, camera);
+			bloom.render(scene, camera);
 		},
 		onApplied: wake,
 	});
@@ -394,7 +402,6 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 		const accent = new THREE.Color(pal.accent);
 		(tv.screenMat.uniforms.uAccent!.value as THREE.Color).copy(accent);
 		tv.glow.color.copy(accent);
-		tv.bloomMat.color.copy(accent).lerp(new THREE.Color(0xffffff), 0.62);
 		lighting.refresh(pal);
 		tv.body.traverse((o) => {
 			const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
@@ -504,7 +511,7 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 
 		syncMeshes(S.sleeping ? 1 : acc / FIXED);
 		updateScreen(dtReal, clock);
-		renderer.render(scene, camera);
+		bloom.render(scene, camera);
 	}
 
 	function start(): void {
@@ -603,7 +610,7 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 		power = 1;
 		syncMeshes(1);
 		updateScreen(0, FROZEN_T);
-		renderer.render(scene, camera);
+		bloom.render(scene, camera);
 	} else {
 		start();
 	}
@@ -624,6 +631,7 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 		renderer.domElement.removeEventListener('webglcontextlost', onContextLost);
 		for (const d of tv.disposables) d.dispose();
 		lighting.dispose();
+		bloom.dispose();
 		tv.ropeGeo.dispose();
 		shadow.geometry.dispose();
 		shadowMat.dispose();
