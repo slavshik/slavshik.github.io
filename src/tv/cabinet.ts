@@ -100,48 +100,56 @@ function bulgeScreen(geo: THREE.BufferGeometry, amount: number, power: number): 
 
 /* ── Шероховатость корпуса ──────────────────────────────────────────────
  *
- * Значение-шум: случайные величины сидят в узлах решётки, между ними
- * сглаженная интерполяция. Узлы берутся по модулю числа ячеек, поэтому
- * решётка замкнута и плитка сходится сама с собой — без этого по корпусу шли
- * бы швы там, где текстура повторяется.
+ * Клеточный шум, он же Вороной: по плитке рассыпаны точки, высота в текселе —
+ * расстояние до ближайшей. Там, где две точки равноудалены, идёт складка, и
+ * складка эта резкая — потому поверхность и читается зернистой.
+ *
+ * Первым тут стояло сглаженное значение-шум, и оно давало мутную кашу:
+ * интерполяция Эрмита округляет всё до мягких бугров, у которых нет граней,
+ * а без граней нормаль меняется плавно и блик по ней не дробится, а
+ * размазывается. Клеточный шум даёт ровно то, чего не хватало, — края.
+ *
+ * Точки берутся из 3×3 соседних ячеек: ближайшая может лежать и в соседней.
+ * Индекс ячейки замыкается по модулю, а координата точки считается от
+ * незамкнутого индекса — так плитка сходится сама с собой без разрыва поля.
  */
 function latticeHash(x: number, y: number, seed: number): number {
 	const n = Math.sin(x * 127.1 + y * 311.7 + seed * 74.7) * 43758.5453;
 	return n - Math.floor(n);
 }
 
-function valueNoise(u: number, v: number, cells: number, seed: number): number {
+function cellNoise(u: number, v: number, cells: number, seed: number): number {
 	const x = u * cells;
 	const y = v * cells;
-	const x0 = Math.floor(x);
-	const y0 = Math.floor(y);
-	const fx = x - x0;
-	const fy = y - y0;
-	// Сглаживание Эрмита: без него на границах ячеек видно решётку
-	const sx = fx * fx * (3 - 2 * fx);
-	const sy = fy * fy * (3 - 2 * fy);
-	const at = (i: number, j: number): number =>
-		latticeHash(
-			(((x0 + i) % cells) + cells) % cells,
-			(((y0 + j) % cells) + cells) % cells,
-			seed,
-		);
-	const a = at(0, 0) + (at(1, 0) - at(0, 0)) * sx;
-	const b = at(0, 1) + (at(1, 1) - at(0, 1)) * sx;
-	return a + (b - a) * sy;
+	const xi = Math.floor(x);
+	const yi = Math.floor(y);
+	let best = 4;
+	for (let j = -1; j <= 1; j++) {
+		for (let i = -1; i <= 1; i++) {
+			const cx = xi + i;
+			const cy = yi + j;
+			const wx = ((cx % cells) + cells) % cells;
+			const wy = ((cy % cells) + cells) % cells;
+			const fx = cx + latticeHash(wx, wy, seed);
+			const fy = cy + latticeHash(wx, wy, seed + 11);
+			const d = (fx - x) * (fx - x) + (fy - y) * (fy - y);
+			if (d < best) best = d;
+		}
+	}
+	return Math.min(1, Math.sqrt(best));
 }
 
 /**
  * Карта нормалей шероховатости.
  *
- * Сначала поле высот — две октавы шума, крупная задаёт бугры, мелкая зерно.
- * Затем нормаль в каждом текселе: наклон поля по X и Y конечными разностями,
- * третья компонента — единица, всё это нормируется и пакуется в RGB привычным
- * сдвигом на половину.
+ * Высота — клеточный шум двух масштабов плюс щепоть попиксельного шума: он
+ * сидит на самом мелком масштабе, какой вообще есть у текстуры, и добавляет
+ * ту микрозернистость, которой не даст никакая решётка.
  *
- * Соседи берутся по модулю стороны, как и узлы решётки: иначе по краю плитки
- * нормаль ломалась бы, и шов было бы видно именно на бликах — там, где эта
- * текстура и работает.
+ * Нормаль — наклон поля по X и Y конечными разностями, третья компонента
+ * единица, всё нормируется и пакуется в RGB сдвигом на половину. Соседи
+ * берутся по модулю стороны: иначе по краю плитки нормаль ломается, и шов
+ * видно именно на бликах — там, где эта карта и работает.
  */
 export function grainTexture(spec: GrainSpec): THREE.CanvasTexture {
 	const S = spec.size;
@@ -155,7 +163,9 @@ export function grainTexture(spec: GrainSpec): THREE.CanvasTexture {
 			const u = x / S;
 			const v = y / S;
 			h[y * S + x] =
-				valueNoise(u, v, spec.cells, 1) * 0.68 + valueNoise(u, v, spec.cells * 2, 2) * 0.32;
+				cellNoise(u, v, spec.cells, 1) * 0.6 +
+				cellNoise(u, v, spec.cells * 2, 5) * 0.28 +
+				latticeHash(x, y, 17) * 0.12;
 		}
 	}
 
@@ -182,6 +192,9 @@ export function grainTexture(spec: GrainSpec): THREE.CanvasTexture {
 	// Карта нормалей — не цвет: через передаточную функцию её гнать нельзя,
 	// иначе наклоны поедут и рельеф станет несимметричным.
 	tex.colorSpace = THREE.NoColorSpace;
+	// Бок корпуса виден под скользящим углом, и без анизотропии зерно там
+	// замывается мипмапом в гладкую полосу — ровно там, где оно нужнее всего.
+	tex.anisotropy = 8;
 	return tex;
 }
 
