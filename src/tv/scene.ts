@@ -24,6 +24,8 @@ export interface TvParts {
 	glow: THREE.PointLight;
 	antennas: AntennaPart[];
 	proxy: THREE.Mesh;
+	/** Мишень под палец на вилке: рейкаст ходит по ней, а не по вилке. */
+	plugProxy: THREE.Mesh;
 	disposables: Disposable[];
 	ropeMesh: THREE.Mesh;
 	ropeGeo: THREE.BufferGeometry;
@@ -338,6 +340,23 @@ export function buildTV(pal: Palette): TvParts {
 	plug.scale.setScalar(1.45);
 	plug.position.z = ROPE_Z;
 
+	/* Мишень, за которую вилку берут пальцем. Шар, а не сама вилка: та собрана
+     из десятка мелких мешей с фасками, рейкаст по ним и дороже, и норовит
+     провалиться между штырями.
+
+     Радиус задан пальцем, а не вилкой. Вилка на экране — 54 px в высоту и 36
+     в ширину на ноутбуке и заметно меньше на телефоне, а палец меньше сорока
+     четырёх не бывает; отсюда 0.20, что даёт круг в 54 px на телефоне и 68
+     на ноутбуке. Промахнуться таким запасом некуда: вилка висит ниже
+     корпуса, в пустоте, и брать там больше нечего. Центр — посередине
+     вилки, между тарелкой и лопаткой, а не в начале координат группы. */
+	const plugProxy = new THREE.Mesh(
+		keep(new THREE.SphereGeometry(0.2, 8, 6)),
+		keep(new THREE.MeshBasicMaterial({ visible: false })),
+	);
+	plugProxy.position.y = -0.09;
+	plug.add(plugProxy);
+
 	// Невидимый прокси под рейкаст: один бокс вместо двадцати мешей.
 	// Габариты — из constants.ts, как и у физики: прокси обязан накрывать
 	// ровно тот корпус, который она считает.
@@ -367,6 +386,7 @@ export function buildTV(pal: Palette): TvParts {
 		glow: cab.glow,
 		antennas: cab.antennas,
 		proxy,
+		plugProxy,
 		disposables,
 		ropeMesh: ropeParts.mesh,
 		ropeGeo: ropeParts.geo,

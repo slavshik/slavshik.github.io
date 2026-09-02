@@ -7,12 +7,23 @@
 
 import type * as THREE from 'three';
 
-import { HALF_H } from './constants.js';
+import { HALF_H, ROPE_N, ROPE_SEG, ROPE_Z } from './constants.js';
 import type { TvInternals } from './index.js';
 
 export interface LabControls extends TvInternals {
 	kick: (force?: number) => void;
 	swipe: (vx?: number, vy?: number) => void;
+	/**
+	 * Взять вилку и утащить её в сторону на заданное число длин шнура, а
+	 * через секунду отпустить. Мышью то же самое проверяется, но не в
+	 * headless-браузере и не одной строкой из консоли.
+	 *
+	 * По умолчанию — вверх и на две с лишним длины: шнур обязан не просто
+	 * распрямиться, а перетянуть, иначе тянуть будет нечем. Вверх, а не вбок,
+	 * потому что вбок телевизор упирается в стенку сцены — на широком окне
+	 * он и так стоит у самого правого края, и тянуть его туда некуда.
+	 */
+	tugPlug: (dx?: number, dy?: number, ms?: number) => void;
 	reset: () => void;
 	setWireframe: (v: boolean) => void;
 	/** Историческое имя: стенд знает телевизор как tv. */
@@ -35,6 +46,21 @@ export function createLabControls(internals: TvInternals): LabControls {
 
 		swipe(vx?: number, vy?: number) {
 			internals.swipeImpulse(vx ?? 0, vy === undefined ? -1600 : vy);
+		},
+
+		tugPlug(dx = 0.8, dy = 2.2, ms = 900) {
+			const hold = internals.plugHold;
+			const len = (ROPE_N - 1) * ROPE_SEG;
+			hold.tx = S.x + dx * len;
+			hold.ty = S.y + dy * len;
+			hold.tz = ROPE_Z;
+			hold.active = true;
+			wake();
+			setTimeout(() => {
+				hold.active = false;
+				hold.tension = 0;
+				wake();
+			}, ms);
 		},
 
 		reset() {

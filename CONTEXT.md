@@ -1,6 +1,6 @@
 # slavshik.me
 
-A one-page personal site with a television on it. The page is the primary subject: a name, a line about the person, four links. The Television is decoration that behaves like an object — it hangs, it falls, it can be pushed around — and it must never be the reason the page fails to work.
+A one-page personal site with a television on it. The page is the primary subject: a name, a line about the person, four links. The Television is decoration that behaves like an object — it hangs, it falls, it can be pushed around, and it can be dragged about by its own flex — and it must never be the reason the page fails to work.
 
 ## Language
 
@@ -22,7 +22,11 @@ A one-page personal site with a television on it. The page is the primary subjec
 
 **Rope**: The flex hanging from the back of the Television, ending in the Plug. Swings under its own weight and drags on the Television's movement. _Avoid_: cable, wire, cord, chain
 
-**Plug**: The weighted end of the Rope. _Avoid_: connector, jack
+**Plug**: The weighted end of the Rope. Can be taken hold of and pulled; see Tug. _Avoid_: connector, jack
+
+**Tug**: Taking hold of the Plug and pulling it. The Rope has a fixed length, so the Plug goes only as far as the Rope allows and the rest of the gesture becomes Tension. _Avoid_: pull, yank, plug drag
+
+**Tension**: What a straightened Rope does to the Anchor. Nothing at all while the Rope has slack; past that it is what makes the Television follow its own Plug — sliding, tipping, or leaving the floor altogether. Never pushes. _Avoid_: rope force, spring, constraint
 
 **Anchor**: The point on the Television's body where the Rope is attached. Moves when the Television tilts, which is what makes the Rope swing on tilt alone. _Avoid_: attachment point, mount point, pivot
 

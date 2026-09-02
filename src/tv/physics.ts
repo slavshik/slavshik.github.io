@@ -105,6 +105,18 @@ export class Rope {
 		damp: number,
 		curl: number,
 		box: BodyBox | null,
+		/**
+		 * Куда держат вилку. Второй приколоченный конец цепочки — тот самый,
+		 * который в обычной жизни свободен. Точка приходит уже подрезанной по
+		 * длине шнура (см. reachable в stepWorld): дальше, чем шнур пускает,
+		 * вилка не уходит, поэтому звенья не растягиваются на картинке, а
+		 * остаток жеста уезжает в натяжение и тянет корпус.
+		 *
+		 * q при этом не трогаем, и в этом весь фокус: верле хранит скорость
+		 * разностью p − q, значит вилка сама набирает скорость руки и на
+		 * отпускании улетает ровно так, как её вели.
+		 */
+		hold: { x: number; y: number; z: number } | null = null,
 	): void {
 		const { p, q, n, seg } = this;
 
@@ -124,6 +136,12 @@ export class Rope {
 		p[0] = ax; // верхняя точка приколочена к корпусу
 		p[1] = ay;
 		p[2] = az;
+		const tail = (n - 1) * 3;
+		if (hold) {
+			p[tail] = hold.x;
+			p[tail + 1] = hold.y;
+			p[tail + 2] = hold.z;
+		}
 
 		/* Своя кривизна покоя: шнур сматывали, и прямым он висеть не хочет.
 		   Каждая внутренняя точка тянется не к месту в пространстве, а к
@@ -166,6 +184,11 @@ export class Rope {
 					p[b] = p[b]! - dx * k;
 					p[b + 1] = p[b + 1]! - dy * k;
 					p[b + 2] = p[b + 2]! - dz * k;
+				} else if (hold && i === n - 2) {
+					// Симметрично: за вилку держат, поправку забирает верхняя
+					p[a] = p[a]! + dx * k;
+					p[a + 1] = p[a + 1]! + dy * k;
+					p[a + 2] = p[a + 2]! + dz * k;
 				} else {
 					dx *= k * 0.5;
 					dy *= k * 0.5;
@@ -364,11 +387,68 @@ export interface DragState {
 	ty: number;
 }
 
+/**
+ * Вилку держат пальцем.
+ *
+ * Структура двусторонняя: tx/ty/tz кладёт ввод, tension пишет физика. Так
+ * сделано потому, что натяжение больше нигде не берётся — оно рождается
+ * внутри шага и нужно снаружи, экрану: рывок за шнур обязан дёрнуть картинку.
+ */
+export interface PlugHold {
+	active: boolean;
+	/** Куда тянет палец. Не подрезано: шнур подрежет сам. */
+	tx: number;
+	ty: number;
+	tz: number;
+	/** Сколько сейчас тянет натянутый шнур. Ноль, пока он провисает. */
+	tension: number;
+}
+
+export function createPlugHold(): PlugHold {
+	return { active: false, tx: 0, ty: 0, tz: 0, tension: 0 };
+}
+
+/**
+ * Сила, с которой натянутый шнур тянет корпус за якорь.
+ *
+ * Шнур — не пружина: он ничего не толкает и до распрямления не делает вовсе
+ * ничего. Поэтому сила односторонняя и начинается ровно с того места, где
+ * палец ушёл дальше, чем шнур пускает.
+ *
+ * Вязкость считается по скорости сближения, а не по скорости корпуса: тянуть
+ * должно за то, что расстояние растёт, а движение поперёк шнура натяжению
+ * безразлично. Без неё натянутый шнур звенит — корпус проскакивает точку
+ * равновесия и возвращается, и так пока не устанет.
+ *
+ * Возвращает вектор силы в мировых осях; ноль — шнур провисает.
+ */
+export function cordTension(
+	ax: number,
+	ay: number,
+	hx: number,
+	hy: number,
+	vx: number,
+	vy: number,
+	slack: number,
+	params: TvParams,
+): { x: number; y: number } {
+	const dx = hx - ax;
+	const dy = hy - ay;
+	const d = Math.hypot(dx, dy);
+	const over = d - slack;
+	if (over <= 0 || d < 1e-6) return { x: 0, y: 0 };
+	const ux = dx / d;
+	const uy = dy / d;
+	const f = clamp(params.cordK * over - params.cordC * (vx * ux + vy * uy), 0, params.cordMax);
+	return { x: f * ux, y: f * uy };
+}
+
 export interface PhysicsWorld {
 	state: BodyState;
 	params: TvParams;
 	env: PhysicsEnv;
 	drag: DragState;
+	plug: PlugHold;
 	antennas: AntennaState[];
 	rope: Rope;
 	twist: Twist;
@@ -406,6 +486,30 @@ export function anchorAt(x: number, y: number, th: number): { x: number; y: numb
 	};
 }
 
+/**
+ * Точка, куда шнур пускает вилку: палец, подрезанный по длине шнура.
+ *
+ * Подрезка — не мелочь, а то, из-за чего жест вообще выглядит верёвкой.
+ * Пусти хвост за палец без ограничения — и звенья растянулись бы на
+ * картинке, потому что решателю пришлось бы держать два конца дальше друг
+ * от друга, чем позволяет сумма звеньев. Вместо этого вилка отстаёт от
+ * пальца, а весь остаток жеста уходит в натяжение и тянет телевизор — ровно
+ * как оно и бывает, когда дёргаешь за шнур.
+ */
+export function reachable(
+	ax: number,
+	ay: number,
+	hold: PlugHold,
+	slack: number,
+): { x: number; y: number; z: number } {
+	const dx = hold.tx - ax;
+	const dy = hold.ty - ay;
+	const d = Math.hypot(dx, dy);
+	if (d <= slack || d < 1e-6) return { x: hold.tx, y: hold.ty, z: hold.tz };
+	const k = slack / d;
+	return { x: ax + dx * k, y: ay + dy * k, z: hold.tz };
+}
+
 export function wake(state: BodyState): void {
 	state.sleeping = false;
 	state.sleepFor = 0;
@@ -418,7 +522,7 @@ export function wake(state: BodyState): void {
  * Вспышку экрана от удара зажигает вызывающий: экран — это уже рендер.
  */
 export function stepWorld(w: PhysicsWorld, dt: number): number {
-	const { state: S, params, env, drag, antennas, rope, twist } = w;
+	const { state: S, params, env, drag, plug, antennas, rope, twist } = w;
 
 	let ax = -params.gravity * env.tiltG;
 	let ay = params.gravity;
@@ -431,7 +535,34 @@ export function stepWorld(w: PhysicsWorld, dt: number): number {
 		ax += -params.homeK * (S.x - env.homeX) - params.homeC * S.vx;
 	}
 
-	const al = -params.uprightK * S.th - params.uprightC * S.om;
+	let al = -params.uprightK * S.th - params.uprightC * S.om;
+
+	/* Тянут за вилку. Натяжение считается по положению до интегрирования —
+	   шаг фиксирован и мелок, отставание на него не видно, а взамен и сила, и
+	   подрезка шнура ниже по функции берутся из одного и того же якоря.
+
+	   Сила прикладывается к якорю, а он сидит внизу задней стенки, а не в
+	   центре масс. Отсюда и момент: потянешь за шнур вбок — телевизор не
+	   поедет плашмя, а сперва кренится, как всякая вещь, которую волокут за
+	   угол. Ради этого момента якорь и вынесен, считать его отдельно не надо. */
+	plug.tension = 0;
+	if (plug.active) {
+		const a = anchorAt(S.x, S.y, S.th);
+		const f = cordTension(
+			a.x,
+			a.y,
+			plug.tx,
+			plug.ty,
+			S.vx,
+			S.vy,
+			(rope.n - 1) * rope.seg,
+			params,
+		);
+		plug.tension = Math.hypot(f.x, f.y);
+		ax += f.x;
+		ay += f.y;
+		al += ((a.x - S.x) * f.y - (a.y - S.y) * f.x) * params.cordLever;
+	}
 
 	S.vx += ax * dt;
 	S.vx *= Math.exp(-params.airV * dt);
@@ -492,6 +623,7 @@ export function stepWorld(w: PhysicsWorld, dt: number): number {
 	// дольше, и заснуть, пока вилка ещё болтается, было бы видно.
 	const still =
 		S.grounded &&
+		!plug.active &&
 		Math.abs(S.vx) < 0.012 &&
 		Math.abs(S.vy) < 0.012 &&
 		Math.abs(S.om) < 0.012 &&
@@ -528,14 +660,24 @@ export function stepWorld(w: PhysicsWorld, dt: number): number {
 	// Корпус как препятствие: провод и вилка сквозь него больше не летают.
 	// Первые два звена пропущены — провод выходит из корпуса, и они внутри
 	// по делу: якорь сидит в 0.15 от правого борта и в 0.14 от дна.
-	rope.step(dt, a.x, a.y, ROPE_Z, params.ropeG, params.ropeDamp, params.ropeCurl, {
-		x: S.x,
-		y: S.y,
-		th: S.th,
-		skip: 2,
-		pad: ROPE_RAD,
-		tailPad: params.plugPad,
-	});
+	rope.step(
+		dt,
+		a.x,
+		a.y,
+		ROPE_Z,
+		params.ropeG,
+		params.ropeDamp,
+		params.ropeCurl,
+		{
+			x: S.x,
+			y: S.y,
+			th: S.th,
+			skip: 2,
+			pad: ROPE_RAD,
+			tailPad: params.plugPad,
+		},
+		plug.active ? reachable(a.x, a.y, plug, (rope.n - 1) * rope.seg) : null,
+	);
 
 	// Кручение — после провода: защемление считается по свежей касательной.
 	twist.step(dt, clampTwist(rope, S.th), params.twistK, params.twistC, params.plugInertia);

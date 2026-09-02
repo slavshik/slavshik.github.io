@@ -43,11 +43,13 @@ import {
 	Rope,
 	anchorAt,
 	createBodyState,
+	createPlugHold,
 	Twist,
 	stepWorld,
 	wake as wakeState,
 	type BodyState,
 	type PhysicsEnv,
+	type PlugHold,
 } from './physics.js';
 import { buildTV, shadowTexture, updateRopeMesh, type TvParts } from './scene.js';
 
@@ -78,6 +80,8 @@ export interface TvInternals {
 	state: BodyState;
 	env: PhysicsEnv;
 	rope: Rope;
+	/** Стенду — чтобы дёрнуть за вилку без мыши. */
+	plugHold: PlugHold;
 	renderer: THREE.WebGLRenderer;
 	scene: THREE.Scene;
 	camera: THREE.PerspectiveCamera;
@@ -156,6 +160,7 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 
 	const rope = new Rope(ROPE_N, ROPE_SEG);
 	const twist = new Twist(ROPE_N);
+	const plugHold = createPlugHold();
 
 	const shadowTex = shadowTexture();
 	const shadowMat = new THREE.MeshBasicMaterial({
@@ -360,6 +365,9 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 		camera,
 		rig,
 		proxy: tv.proxy,
+		plugObject: tv.plug,
+		plugProxy: tv.plugProxy,
+		plug: plugHold,
 		params,
 		state: S,
 		env,
@@ -370,11 +378,36 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 
 	/* ── Шаг физики ─────────────────────────────────────────────────────── */
 
-	const world = { state: S, params, env, drag: input.drag, antennas: tv.antennas, rope, twist };
+	const world = {
+		state: S,
+		params,
+		env,
+		drag: input.drag,
+		plug: plugHold,
+		antennas: tv.antennas,
+		rope,
+		twist,
+	};
+
+	/* Натяжение на прошлом шаге. Экран дёргается от рывка, а не от того, что
+	   шнур просто натянут: держать его натянутым можно сколько угодно, и
+	   мигать всё это время телевизор не должен. Смотрим на прирост. */
+	let prevTension = 0;
 
 	function physicsStep(dt: number): void {
 		const impact = stepWorld(world, dt);
 		if (impact > 2.2) flash(Math.min(impact * 0.22, 0.9));
+
+		// Дёрнули за шнур — телевизор тряхнуло, и картинка это отыгрывает:
+		// вспышка и срыв строки, как от удара по корпусу. Порог отсекает
+		// плавную натяжку: рывком считается только резкий прирост силы.
+		const jerk = plugHold.tension - prevTension;
+		prevTension = plugHold.tension;
+		if (jerk > 26) {
+			flash(Math.min(0.3 + jerk / 160, 0.75));
+			rollV = Math.max(rollV, 1 / 0.3);
+			requestChannel();
+		}
 
 		if (tuner) {
 			if (S.grounded !== wasGrounded) {
@@ -666,6 +699,7 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 		state: S,
 		env,
 		rope,
+		plugHold,
 		renderer,
 		scene,
 		camera,
@@ -702,7 +736,9 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 			const a = anchorAt(S.x, S.y, S.th);
 			rope.reset(a.x, a.y, ROPE_Z);
 			twist.reset();
-			twist.reset();
+			plugHold.active = false;
+			plugHold.tension = 0;
+			prevTension = 0;
 		},
 	};
 

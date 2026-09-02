@@ -142,6 +142,7 @@
       <button data-act="wheelDown">Колесо ↓</button>
       <button data-act="swipeUp">Свайп ↑</button>
       <button data-act="swipeSide">Свайп ↗</button>
+      <button data-act="tug">Дёрнуть за вилку</button>
       <button data-act="reset">Сброс</button>
       <button data-act="pause">Пауза</button>
     </div>
@@ -195,6 +196,7 @@
       antK: [10, 300], antC: [0, 20], antLever: [0, 1.5],
       ropeG: [0, 60], ropeDamp: [0.9, 1],
       ropeCurl: [0, 0.2], twistK: [0, 300], twistC: [0, 8], plugInertia: [0.5, 12], twistGain: [0, 40],
+      cordK: [0, 400], cordC: [0, 20], cordMax: [0, 300], cordLever: [0, 4],
       dropY: [0, 5], floorGap: [-40, 60], homeGap: [-60, 120],
     };
 
@@ -223,6 +225,7 @@
       wheelDown: () => D.wheel(160),
       swipeUp:   () => D.swipe(0, -1800),
       swipeSide: () => D.swipe(1400, -1200),
+      tug:       () => D.tugPlug(),
       reset:     () => D.reset(),
       pause:     (b) => { paused = !paused; D.setPaused(paused); b.textContent = paused ? 'Пуск' : 'Пауза'; },
     };

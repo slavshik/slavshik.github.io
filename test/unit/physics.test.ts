@@ -19,6 +19,7 @@ import {
 	Rope,
 	anchorAt,
 	createBodyState,
+	createPlugHold,
 	stepWorld,
 	supportY,
 	Twist,
@@ -40,6 +41,7 @@ function makeWorld(overrides: Partial<TvParams> = {}): PhysicsWorld {
 		params: { ...DEFAULTS, ...overrides },
 		env: { tiltG: 0, homeX: 0, halfH: 6, limX: 4 },
 		drag: { active: false, tx: 0, ty: 0 },
+		plug: createPlugHold(),
 		antennas: [
 			{ a: 0, av: 0 },
 			{ a: 0, av: 0 },
