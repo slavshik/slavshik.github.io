@@ -67,31 +67,39 @@ test('за шнур телевизор поднимается в воздух', 
 	 * корпус не подтянулся к пальцу: дальше шнур провисает и сила честно
 	 * падает в ноль. Один замер «после паузы» ловит то момент рывка, то этот
 	 * ноль — в зависимости от того, как быстро идёт кадр.
+	 *
+	 * И кнопка нажимается изнутри страницы, а не через page.click(). Клик
+	 * снаружи идёт с непредсказуемой задержкой — проверки доступности,
+	 * прокрутка, ожидание кадра, — а натяжение живёт первые доли секунды.
+	 * В CI, где всё втрое медленнее, замер успевал закончиться раньше, чем
+	 * клик доезжал: сначала пик натяжения выходил нулём, потом телевизор
+	 * не успевал подняться. Здесь замер уже стоит, когда кнопка нажата, и
+	 * заканчивается сам — когда вилку отпустили, а не по будильнику.
 	 */
 	await page.goto('/lab/tv.html');
 	await page.waitForSelector('#tv-stage canvas');
 	await page.waitForTimeout(2500); // упасть и успокоиться
 
 	const before = await page.evaluate(() => window.tv.internals.state.y);
-	await page.evaluate(() => {
-		const w = window as unknown as { __peak: { y: number; tension: number; flew: boolean } };
-		w.__peak = { y: -Infinity, tension: 0, flew: false };
-		const I = window.tv.internals;
-		const t = setInterval(() => {
-			w.__peak.y = Math.max(w.__peak.y, I.state.y);
-			w.__peak.tension = Math.max(w.__peak.tension, I.plugHold.tension);
-			if (!I.state.grounded) w.__peak.flew = true;
-		}, 30);
-		setTimeout(() => clearInterval(t), 1500);
-	});
-
-	await page.locator('[data-act="tug"]').click();
-	await page.waitForTimeout(1600);
-
 	const peak = await page.evaluate(
 		() =>
-			(window as unknown as { __peak: { y: number; tension: number; flew: boolean } }).__peak,
+			new Promise<{ y: number; tension: number; flew: boolean }>((done) => {
+				const I = window.tv.internals;
+				const p = { y: -Infinity, tension: 0, flew: false };
+				const deadline = Date.now() + 15000; // чтобы тест не завис молча
+				const t = setInterval(() => {
+					p.y = Math.max(p.y, I.state.y);
+					p.tension = Math.max(p.tension, I.plugHold.tension);
+					if (!I.state.grounded) p.flew = true;
+					if ((p.tension > 0 && !I.plugHold.active) || Date.now() > deadline) {
+						clearInterval(t);
+						done(p);
+					}
+				}, 16);
+				document.querySelector<HTMLButtonElement>('[data-act="tug"]')!.click();
+			}),
 	);
+
 	expect(peak.tension).toBeGreaterThan(0);
 	expect(peak.y).toBeGreaterThan(before + 0.3);
 	expect(peak.flew).toBe(true);
