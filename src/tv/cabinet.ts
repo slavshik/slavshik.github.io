@@ -276,6 +276,46 @@ export function buildCabinet(
 	}
 	tilt.add(new THREE.Mesh(shellGeo, shell));
 
+	// Волосяной паз выдаёт, что корпус собран из двух отформованных
+	// половин, а не вырезан из одного куска. Кольцо стоит внутри силуэта:
+	// снаружи остаётся только тёмная щель, а не второй корпус.
+	const seamK = taperAt(spec.details.seamZ, spec);
+	const seamOuter = roundedRect(
+		spec.body.w * seamK - 0.006,
+		spec.body.h * seamK - 0.006,
+		spec.body.round * seamK,
+	);
+	seamOuter.holes.push(
+		roundedRect(
+			spec.body.w * seamK - 0.018,
+			spec.body.h * seamK - 0.018,
+			spec.body.round * seamK - 0.006,
+		),
+	);
+	const seamGeo = keep(
+		new THREE.ExtrudeGeometry(seamOuter, {
+			depth: spec.details.seamWidth,
+			bevelEnabled: false,
+			curveSegments: 12,
+		}),
+	);
+	const seam = new THREE.Mesh(seamGeo, knob);
+	seam.position.z = spec.details.seamZ - spec.details.seamWidth / 2;
+	tilt.add(seam);
+
+	// Щели вентиляции лежат чуть над крышкой: это тёмные углубления,
+	// а не накладная решётка. Одна общая геометрия держит их дешёвыми.
+	const ventGeo = keep(new THREE.BoxGeometry(spec.details.ventW, 0.006, spec.details.ventD));
+	for (let i = -2; i <= 2; i++) {
+		const vent = new THREE.Mesh(ventGeo, knob);
+		vent.position.set(
+			i * spec.details.ventGap,
+			(spec.body.h / 2) * taperAt(spec.details.ventZ, spec) + 0.001,
+			spec.details.ventZ,
+		);
+		tilt.add(vent);
+	}
+
 	// Рамка по центру и во всю ширину фасада: ручек справа больше нет, панель
 	// под них не нужна. До самого края корпуса не доходит нарочно — рамка
 	// стоит плитой перед фасадом, а фасад к краям заворачивается скруглением,
@@ -302,6 +342,21 @@ export function buildCabinet(
 	// его перекрывает и от картинки остаётся только выпуклая середина.
 	bezel.position.set(0, 0, spec.bezel.z);
 	tilt.add(bezel);
+
+	// Между лицевой рамкой и трубкой есть ещё одна, тёмная ступень. Она
+	// даёт глубину даже тогда, когда сама кривизна стекла занимает всего пару пикселей.
+	const lipShape = roundedRect(spec.bezel.holeW, spec.bezel.holeH, spec.bezel.holeR);
+	lipShape.holes.push(roundedRect(spec.bezel.lipW, spec.bezel.lipH, spec.bezel.lipR));
+	const lipGeo = keep(
+		new THREE.ExtrudeGeometry(lipShape, {
+			depth: spec.bezel.lipDepth,
+			bevelEnabled: false,
+			curveSegments: 24,
+		}),
+	);
+	const lip = new THREE.Mesh(lipGeo, knob);
+	lip.position.z = spec.bezel.z + spec.bezel.depth - spec.bezel.lipDepth * 1.5;
+	tilt.add(lip);
 
 	// Экран чуть больше отверстия: край уходит под рамку, стыка не видно.
 	// Купол лишь слегка выходит за лицевую грань рамки: кривизна читается в

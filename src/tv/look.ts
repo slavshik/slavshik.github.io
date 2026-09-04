@@ -44,6 +44,11 @@ export interface ShapeSpec {
 		depth: number;
 		bevel: number;
 		z: number;
+		/** Тёмная внутренняя ступень между рамкой и стеклом. */
+		lipW: number;
+		lipH: number;
+		lipR: number;
+		lipDepth: number;
 	};
 	screen: {
 		w: number;
@@ -74,6 +79,16 @@ export interface ShapeSpec {
 		arms: { side: number; len: number; splay: number; back: number }[];
 	};
 	feet: { rTop: number; rBot: number; h: number; x: number; z: number; lift: number };
+	details: {
+		/** Паз между передней и задней половинами корпуса. */
+		seamZ: number;
+		seamWidth: number;
+		/** Пять прорезей на крышке; шаг и размер заданы отдельно. */
+		ventW: number;
+		ventD: number;
+		ventGap: number;
+		ventZ: number;
+	};
 }
 
 /**
@@ -190,13 +205,17 @@ export const LOOK: LookSpec = {
 			depth: 0.07,
 			bevel: 0.012,
 			z: 0.405,
+			lipW: 0.8,
+			lipH: 0.48,
+			lipR: 0.085,
+			lipDepth: 0.018,
 		},
 		screen: {
 			w: 0.86,
 			h: 0.54,
 			bulge: 0.075,
 			power: 0.8,
-			z: 0.41,
+			z: 0.385,
 			glassOffset: 0.006,
 			glassColor: '#c9e1df',
 			glassRoughness: 0.12,
@@ -223,14 +242,22 @@ export const LOOK: LookSpec = {
 			],
 		},
 		feet: { rTop: 0.0387, rBot: 0.015775, h: FOOT_H, x: 0.4075, z: 0.26, lift: 0.0139 },
+		details: {
+			seamZ: -0.22,
+			seamWidth: 0.008,
+			ventW: 0.18,
+			ventD: 0.012,
+			ventGap: 0.055,
+			ventZ: -0.16,
+		},
 	},
 	lights: {
-		hemi: { ground: '#000000', day: 2.5, night: 3.1375 },
-		key: { color: '#fefb41', day: 2.875, night: 0.925, pos: [-4, 0.42, 0.76] },
-		fill: { intensity: 1.13, pos: [0.94, -0.28, 1.1] },
-		rim: { color: '#fffbb9', intensity: 0.48, pos: [0.7, 1.6, -2.4] },
-		env: { intensity: 0.3675, top: '#fff994', bottom: '#000000' },
-		exposure: 1.075,
+		hemi: { ground: '#17130f', day: 1.65, night: 2.1 },
+		key: { color: '#fff4df', day: 2.15, night: 1.05, pos: [-3.2, 2.4, 2.8] },
+		fill: { intensity: 0.48, pos: [1.8, -0.1, 2.2] },
+		rim: { color: '#d8e5ff', intensity: 0.72, pos: [1.8, 2.2, -2.8] },
+		env: { intensity: 0.62, top: '#f5eadb', bottom: '#26201c' },
+		exposure: 1.02,
 		toneMapping: 'agx',
 	},
 	// Цвета корпуса нарочно одни и те же в светлой и тёмной теме: это игрушка,

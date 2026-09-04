@@ -149,7 +149,7 @@ export default defineConfig({
 				// физики в посетительский кусок не ездит. Аддоны three не названы
 				// нарочно: RoundedBoxGeometry нужен только корпусу и сам ложится в
 				// tv, а OrbitControls и экспортёры — только стендам.
-				advancedChunks: {
+				codeSplitting: {
 					groups: [
 						{
 							name: 'tv',

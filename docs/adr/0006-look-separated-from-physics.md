@@ -13,7 +13,7 @@ Two decisions follow.
 ## Consequences
 
 - The refactor was required to be pixel-identical; the zero-tolerance screenshot baselines are what proved it, and they did not move.
-- New lighting levers (rim light, environment map, tone mapping) ship switched off. A spec of zeroes must render exactly what the old code did, otherwise the baselines cannot tell a refactor from a redesign.
+- Lighting levers (rim light, environment map, tone mapping) first shipped switched off so the extraction stayed pixel-identical. They are now part of the production look and are tuned in the same spec as the geometry and materials.
 - The model stays procedural. glTF and USDZ are _exports_ from the Lab — for Blender, and for AR Quick Look on iOS — not a runtime format: a loader plus a binary would cost the visitor bytes and cost the Lab its sliders.
 - A third HTML entry made the bundler split the shared `src/tv/` modules into a second chunk, which the visitor would have paid for with an extra request. `advancedChunks` in `vite.config.ts` pins the Television back into one chunk.
 - Real shadow maps are deliberately absent from the Lab. There is no floor under the Television on the page — the contact shadow is a billboard — so a shadow map would tune something that can never ship.

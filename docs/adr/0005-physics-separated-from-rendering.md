@@ -1,6 +1,6 @@
 # The Television's physics does not know about three.js
 
-Status: accepted, not yet implemented
+Status: accepted, implemented
 
 The 740-line `mount()` closure shared mutable state between physics, layout, input, theming and the render loop by having them all in scope together, so no part of it could be exercised alone. Splitting it into files forces a choice about how that state crosses the boundaries; passing one context object to everything would have preserved the coupling under a new name.
 

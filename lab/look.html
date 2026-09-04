@@ -375,6 +375,10 @@
         ['толщина', 'shape.bezel.depth', 0.01, 0.2],
         ['фаска', 'shape.bezel.bevel', 0.001, 0.05],
         ['глубина Z', 'shape.bezel.z', 0.2, 0.6],
+		['край трубки шир.', 'shape.bezel.lipW', 0.3, 0.95],
+		['край трубки выс.', 'shape.bezel.lipH', 0.2, 0.7],
+		['край трубки рад.', 'shape.bezel.lipR', 0.02, 0.2],
+		['край трубки гл.', 'shape.bezel.lipDepth', 0.002, 0.06],
       ]],
       ['стекло', false, [
         ['ширина', 'shape.screen.w', 0.3, 1.0],
@@ -432,6 +436,14 @@
         ['врозь Z', 'shape.feet.z', 0, 0.45],
         ['утоп', 'shape.feet.lift', 0, 0.04],
       ]],
+	  ['детали корпуса', false, [
+		['шов Z', 'shape.details.seamZ', -0.38, 0.25],
+		['шов толщина', 'shape.details.seamWidth', 0.002, 0.025],
+		['вент. длина', 'shape.details.ventW', 0.04, 0.35],
+		['вент. ширина', 'shape.details.ventD', 0.004, 0.04],
+		['вент. шаг', 'shape.details.ventGap', 0.025, 0.12],
+		['вент. Z', 'shape.details.ventZ', -0.35, 0.2],
+	  ]],
       ['свет', false, [
         ['ключ день', 'lights.key.day', 0, 5],
         ['ключ ночь', 'lights.key.night', 0, 5],

@@ -17,7 +17,6 @@
 
 import * as THREE from 'three';
 
-import { createTuner, type Tuner } from './broadcast.js';
 import {
 	CAM_DIST,
 	DEFAULTS,
@@ -51,7 +50,9 @@ import {
 	type PhysicsEnv,
 	type PlugHold,
 } from './physics.js';
-import { buildTV, shadowTexture, updateRopeMesh, type TvParts } from './scene.js';
+import { updateRopeMesh } from './rope-view.js';
+import { buildTV, shadowTexture, type TvParts } from './scene.js';
+import { createScreenController } from './screen.js';
 
 export interface MountOptions {
 	params?: Partial<TvParams>;
@@ -186,177 +187,14 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 		wakeState(S);
 	}
 
-	/* ── Экран: розжиг, срыв кадра, вспышка от удара ────────────────────── */
-
-	let power = 0;
-	let flashV = 0;
-	let roll = 0;
-	let rollV = 0;
-	let nextGlitch = 3 + Math.random() * 5;
-
-	/* ── Передача ───────────────────────────────────────────────────────── */
-
-	// texMix ползёт к единице, когда ролик доехал: настройка на канал, а не
-	// подмена картинки. В неподвижном режиме передачи нет вовсе — эталоны не
-	// имеют права зависеть от сети.
-	let tuner: Tuner | null = null;
-	let texMix = 0;
-	let texWanted = 0;
-
-	/*
-	 * Захват синхронизации. Картинка не выцеловывается из шума плавно —
-	 * трубка ловит строку рывками: схватила, потеряла, схватила крепче.
-	 * Поэтому это ступени с провалами, а не кривая: между ними ничего не
-	 * интерполируется, и каждый скачок виден как скачок.
-	 *
-	 * Длительность взята короткой нарочно. Плавный разгон читался ожиданием,
-	 * а рваный обязан быть быстрым — иначе выглядит не захватом, а поломкой.
-	 */
-	const LOCK_STEPS: readonly { t: number; v: number }[] = [
-		{ t: 0.0, v: 0.5 },
-		{ t: 0.06, v: 0.05 },
-		{ t: 0.12, v: 0.8 },
-		{ t: 0.18, v: 0.25 },
-		{ t: 0.26, v: 1.0 },
-	];
-	const LOCK_END = 0.26;
-
-	// lockT < 0 — захват не идёт. Масштаб слегка гуляет, чтобы два соседних
-	// приземления не совпадали ступенька в ступеньку.
-	let lockT = -1;
-	let lockScale = 1;
-	let lockStep = -1;
-
-	function startLock(): void {
-		texWanted = 1;
-		lockT = 0;
-		lockScale = 0.85 + Math.random() * 0.3;
-		lockStep = -1;
-	}
-
-	if (!frozen && opts.broadcastUrl) {
-		const url = opts.broadcastUrl;
-		tuner = createTuner({
-			url,
-			onChannel: (texture) => {
-				tv.screenMat.uniforms.uTex!.value = texture;
-				// В воздухе картинку не показываем даже когда ролик доехал:
-				// там положено быть шуму. Включит её касание пола.
-				if (S.grounded) startLock();
-				else texWanted = 0;
-				// Срыв кадра ровно в момент появления картинки — так телевизор
-				// ловит канал, а не переключает слайд.
-				rollV = 1 / 0.3;
-				flashV = Math.max(flashV, 0.35);
-				wake();
-			},
-		});
-		tuner.setPlaying(true);
-	}
-
-	/*
-	 * Пока телевизор в воздухе — белый шум; сел на пол — картинка
-	 * калибруется обратно. Полёт ловится не по клику, а по состоянию физики:
-	 * подбросить корпус можно и броском, и колесом, и свайпом по странице, и
-	 * во всех случаях трубка обязана вести себя одинаково.
-	 *
-	 * Отскоки после падения — тоже полёты, и шум на них честный: картинка
-	 * дёргается, пока корпус скачет, и устаканивается вместе с ним. А вот
-	 * канал за один полёт меняется ровно один раз, иначе пара отскоков
-	 * пролистала бы половину альбома.
-	 */
-	let wasGrounded = false;
-	let channelPending = false;
-
-	/**
-	 * Новый канал заказывает зритель, а не физика: отскок — не повод менять
-	 * передачу, иначе одно падение пролистывало по пять роликов и столько же
-	 * раз лезло в сеть. Показать заказанное — уже дело пола.
-	 */
-	function requestChannel(): void {
-		channelPending = true;
-	}
-
-	function liftOff(): void {
-		texWanted = 0;
-		lockT = -1;
-		rollV = 1 / 0.22;
-	}
-
-	function landed(): void {
-		rollV = 1 / 0.3;
-		// Смена канала — на первом касании пола после полёта. Не доехал
-		// следующий ролик — вернётся прежний, и это не беда: телевизор
-		// дёрнулся, но канал не поймал.
-		if (channelPending) {
-			channelPending = false;
-			tuner?.tune();
-		}
-		if (tuner) startLock();
-	}
-
-	function flash(amount: number): void {
-		flashV = Math.max(flashV, amount);
-	}
-
-	function updateScreen(dt: number, t: number): void {
-		power = Math.min(1, power + dt / 0.9);
-		const ease = 1 - Math.pow(1 - power, 3);
-		const screenScale = 0.02 + 0.98 * Math.min(1, ease * 1.06);
-		tv.screen.scale.y = screenScale;
-		tv.screenGlass.scale.y = screenScale;
-
-		flashV *= Math.exp(-dt / 0.09);
-
-		nextGlitch -= dt;
-		if (nextGlitch <= 0) {
-			rollV = 1 / 0.25;
-			nextGlitch = 4 + Math.random() * 5;
-		}
-		if (rollV > 0) {
-			roll += rollV * dt;
-			if (roll >= 1) {
-				roll = 0;
-				rollV = 0;
-			}
-		}
-
-		if (texWanted === 0) {
-			// В шум — мгновенно, как оно и бывает, когда по телевизору стукнули
-			texMix = Math.max(0, texMix - dt / 0.09);
-		} else if (lockT >= 0) {
-			lockT += dt / lockScale;
-			let v = texMix;
-			let i = -1;
-			for (let k = 0; k < LOCK_STEPS.length; k++) {
-				if (lockT >= LOCK_STEPS[k]!.t) {
-					v = LOCK_STEPS[k]!.v;
-					i = k;
-				}
-			}
-			// Каждый переход на новую ступень рвёт строку: провал в шум сам по
-			// себе виден слабо, а вместе со срывом кадра читается разрывом.
-			if (i !== lockStep) {
-				lockStep = i;
-				rollV = Math.max(rollV, 1 / 0.14);
-			}
-			texMix = v;
-			if (lockT >= LOCK_END) {
-				texMix = 1;
-				lockT = -1;
-			}
-		}
-
-		const u = tv.screenMat.uniforms;
-		u.uTime!.value = t;
-		u.uRoll!.value = roll;
-		u.uTexMix!.value = texMix;
-		u.uIntensity!.value = ease + flashV;
-		tv.glow.intensity = (0.5 + flashV * 2.5) * ease;
-		// Яркость сияния: розжиг, передача чуть ярче снега, удар вспыхивает.
-		// Форма сюда не приходит — её даёт сам кадр.
-		bloom.setFlicker((0.55 + 0.45 * texMix + flashV * 1.7) * ease);
-	}
+	const screen = createScreenController({
+		parts: tv,
+		bloom,
+		state: S,
+		wake,
+		broadcastUrl: opts.broadcastUrl,
+		frozen,
+	});
 
 	/* ── Ввод ───────────────────────────────────────────────────────────── */
 
@@ -372,8 +210,8 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 		state: S,
 		env,
 		onWake: wake,
-		onFlash: flash,
-		onImpulse: requestChannel,
+		onFlash: screen.flash,
+		onImpulse: screen.requestChannel,
 	});
 
 	/* ── Шаг физики ─────────────────────────────────────────────────────── */
@@ -389,33 +227,9 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 		twist,
 	};
 
-	/* Натяжение на прошлом шаге. Экран дёргается от рывка, а не от того, что
-	   шнур просто натянут: держать его натянутым можно сколько угодно, и
-	   мигать всё это время телевизор не должен. Смотрим на прирост. */
-	let prevTension = 0;
-
 	function physicsStep(dt: number): void {
 		const impact = stepWorld(world, dt);
-		if (impact > 2.2) flash(Math.min(impact * 0.22, 0.9));
-
-		// Дёрнули за шнур — телевизор тряхнуло, и картинка это отыгрывает:
-		// вспышка и срыв строки, как от удара по корпусу. Порог отсекает
-		// плавную натяжку: рывком считается только резкий прирост силы.
-		const jerk = plugHold.tension - prevTension;
-		prevTension = plugHold.tension;
-		if (jerk > 26) {
-			flash(Math.min(0.3 + jerk / 160, 0.75));
-			rollV = Math.max(rollV, 1 / 0.3);
-			requestChannel();
-		}
-
-		if (tuner) {
-			if (S.grounded !== wasGrounded) {
-				if (S.grounded) landed();
-				else liftOff();
-				wasGrounded = S.grounded;
-			}
-		}
+		screen.afterPhysics(impact, plugHold);
 	}
 
 	/* ── Раскладка ──────────────────────────────────────────────────────── */
@@ -477,7 +291,6 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 
 		updateRopeMesh(tv.ropeGeo, rope, twist);
 
-		// Вилка садится на последнюю точку и разворачивается по последнему звену
 		// Вилка садится на последнюю точку. Ориентация — уже не один угол:
 		// провод трёхмерный, и вилку надо и повернуть по последнему звену, и
 		// довернуть вокруг него на собственное кручение провода. Кватернион
@@ -551,7 +364,7 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 		if (S.sleeping && !paused && (parity ^= 1)) return;
 
 		syncMeshes(S.sleeping ? 1 : acc / FIXED);
-		updateScreen(dtReal, clock);
+		screen.update(dtReal, clock);
 		bloom.render(scene, camera);
 	}
 
@@ -560,14 +373,14 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 		running = true;
 		last = 0;
 		acc = 0;
-		tuner?.setPlaying(true);
+		screen.setPlaying(true);
 		raf = requestAnimationFrame(frame);
 	}
 	function stop(): void {
 		running = false;
 		// Вкладку спрятали или телевизор уехал за экран — декодировать видео
 		// незачем. Цикл встал, и текстура всё равно никуда не попадает.
-		tuner?.setPlaying(false);
+		screen.setPlaying(false);
 		cancelAnimationFrame(raf);
 		raf = 0;
 	}
@@ -640,30 +453,20 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 
 	/* Неподвижный кадр для снимков: подставляется прямо в uTex и включает
 	   передачу на полную, минуя тюнер и его ступени захвата. */
-	if (opts.stillClip) {
-		const still = new THREE.Texture(opts.stillClip);
-		still.colorSpace = THREE.SRGBColorSpace;
-		still.needsUpdate = true;
-		tv.screenMat.uniforms.uTex!.value = still;
-		tv.disposables.push(still);
-		texWanted = 1;
-		texMix = 1;
-		lockT = -1;
-	}
+	if (opts.stillClip) screen.setStill(opts.stillClip);
 
 	if (frozen) {
 		// Снимок должен совпадать от запуска к запуску: падения нет, случайные
 		// срывы кадра выключены, шум прибит к постоянному времени, экран сразу
 		// разожжён. Провод перед этим успокаиваем фиксированным числом шагов —
 		// в физике случайностей нет, значит результат воспроизводим.
-		nextGlitch = Infinity;
+		screen.freeze();
 		for (let i = 0; i < FROZEN_SETTLE; i++) physicsStep(FIXED);
 		prev.x = S.x;
 		prev.y = S.y;
 		prev.th = S.th;
-		power = 1;
 		syncMeshes(1);
-		updateScreen(0, FROZEN_T);
+		screen.update(0, FROZEN_T);
 		bloom.render(scene, camera);
 	} else {
 		start();
@@ -674,8 +477,7 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 	function destroy(): void {
 		stop();
 		// Отменяет и ожидание ролика, если он ещё не доехал
-		tuner?.dispose();
-		tuner = null;
+		screen.dispose();
 		ro.disconnect();
 		io.disconnect();
 		document.removeEventListener('visibilitychange', onVis);
@@ -706,7 +508,7 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 		rig,
 		parts: tv,
 		wake,
-		flash,
+		flash: screen.flash,
 		wheel: input.wheel,
 		swipeImpulse: input.swipeImpulse,
 		refreshTheme,
@@ -723,12 +525,7 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 			forceDark = v;
 			refreshTheme();
 		},
-		resetScreen: () => {
-			power = 0;
-			flashV = 0;
-			roll = 0;
-			rollV = 0;
-		},
+		resetScreen: screen.reset,
 		syncPrev: () => {
 			prev = { x: S.x, y: S.y, th: S.th };
 		},
@@ -738,7 +535,6 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 			twist.reset();
 			plugHold.active = false;
 			plugHold.tension = 0;
-			prevTension = 0;
 		},
 	};
 
