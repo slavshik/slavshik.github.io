@@ -198,9 +198,9 @@ export const LOOK: LookSpec = {
 			power: 0.8,
 			z: 0.41,
 			glassOffset: 0.006,
-			glassColor: '#c9e1df',
-			glassRoughness: 0.12,
-			glassOpacity: 0.16,
+			glassColor: '#839b91',
+			glassRoughness: 0.055,
+			glassOpacity: 0.1,
 			glassIor: 1.52,
 		},
 		glow: { z: 1, dist: 0.907, decay: 0.58 },
@@ -233,37 +233,36 @@ export const LOOK: LookSpec = {
 		exposure: 1.075,
 		toneMapping: 'agx',
 	},
-	// Цвета корпуса нарочно одни и те же в светлой и тёмной теме: это игрушка,
-	// а игрушка не перекрашивается от системной настройки.
+	// Цвета материалов одинаковы в обеих темах: меняется свет, не пигмент.
 	materials: {
 		shell: {
-			color: '#d94d32',
-			roughness: 0.43,
+			color: '#b9472e',
+			roughness: 0.3,
 			metalness: 0,
-			clearcoat: 0.48,
-			clearcoatRoughness: 0.32,
-			specularIntensity: 0.78,
-		}, // окрашенный бакелит
+			clearcoat: 0.22,
+			clearcoatRoughness: 0.2,
+			specularIntensity: 1,
+		}, // крашеный корпус с тонким слоем лака
 		bezel: {
-			color: '#eedbbd',
-			roughness: 0.44,
+			color: '#d9cfb6',
+			roughness: 0.32,
 			metalness: 0,
-			clearcoat: 0.24,
-			clearcoatRoughness: 0.48,
-			specularIntensity: 0.68,
-		}, // сливочная рамка
+			clearcoat: 0,
+			clearcoatRoughness: 0.3,
+			specularIntensity: 1,
+		}, // сатиновый пластик цвета слоновой кости
 		knob: {
-			color: '#292631',
-			roughness: 0.52,
+			color: '#242320',
+			roughness: 0.42,
 			metalness: 0,
-			clearcoat: 0.18,
+			clearcoat: 0,
 			clearcoatRoughness: 0.46,
-			specularIntensity: 0.56,
+			specularIntensity: 1,
 		}, // почти чёрный пластик
 		steel: {
-			color: '#b6bcc3',
-			roughness: 0.27,
-			metalness: 0.9,
+			color: '#e1e3e5',
+			roughness: 0.17,
+			metalness: 1,
 			clearcoat: 0,
 			clearcoatRoughness: 0,
 			specularIntensity: 1,
@@ -307,9 +306,9 @@ export const LOOK: LookSpec = {
 	grain: {
 		size: 512,
 		cells: 56,
-		relief: 2.6,
+		relief: 1.2,
 		repeat: 2,
-		scale: 0.75,
+		scale: 0.2,
 	},
 	// Оплётка: чёрная нить в жёлтую крапину, как у довоенного шнура.
 	//
