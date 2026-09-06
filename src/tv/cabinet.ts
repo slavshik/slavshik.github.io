@@ -327,6 +327,7 @@ export function buildCabinet(
 				uAccent: { value: new THREE.Color(accent) },
 				uTex: { value: blankTex },
 				uTexMix: { value: 0 },
+				uVideo: { value: false },
 			},
 		}),
 	);

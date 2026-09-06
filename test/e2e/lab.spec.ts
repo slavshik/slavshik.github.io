@@ -124,3 +124,62 @@ test('за шнур телевизор поднимается в воздух', 
 	const after = await page.evaluate(() => window.tv.internals.state.y);
 	expect(Math.abs(after - before)).toBeLessThan(0.05);
 });
+
+test('экран декодирует видео как sRGB и сохраняет снег через сутки', async ({ page }) => {
+	await page.goto('/lab/tv.html');
+	await page.waitForSelector('#tv-stage canvas');
+	const result = await page.evaluate(() => {
+		const I = window.tv.internals;
+		I.setPaused(true);
+		const u = I.parts.screenMat.uniforms;
+		const original = u.uTex!.value as import('three').DataTexture;
+		const Texture = original.constructor as typeof import('three').DataTexture;
+		const pixels = new Uint8Array([128, 96, 64, 255]);
+		const still = new Texture(pixels, 1, 1);
+		still.colorSpace = 'srgb';
+		still.needsUpdate = true;
+		const video = new Texture(pixels, 1, 1);
+		video.needsUpdate = true;
+		const gl = I.renderer.getContext();
+		const capture = (): Uint8Array => {
+			I.renderer.render(I.scene, I.camera);
+			const data = new Uint8Array(gl.drawingBufferWidth * gl.drawingBufferHeight * 4);
+			gl.readPixels(
+				0,
+				0,
+				gl.drawingBufferWidth,
+				gl.drawingBufferHeight,
+				gl.RGBA,
+				gl.UNSIGNED_BYTE,
+				data,
+			);
+			return data;
+		};
+		u.uIntensity!.value = 1;
+		u.uRoll!.value = 0;
+		u.uTexMix!.value = 1;
+		u.uTex!.value = still;
+		u.uVideo!.value = false;
+		const a = capture();
+		u.uTex!.value = video;
+		u.uVideo!.value = true;
+		const b = capture();
+		let difference = 0;
+		for (let i = 0; i < a.length; i++)
+			difference = Math.max(difference, Math.abs(a[i]! - b[i]!));
+		u.uTexMix!.value = 0;
+		u.uTime!.value = 86400;
+		const snow = capture();
+		u.uTime!.value = 86400 + 1 / 30;
+		const next = capture();
+		let changed = 0;
+		for (let i = 0; i < snow.length; i += 4) if (Math.abs(snow[i]! - next[i]!) > 20) changed++;
+		u.uTex!.value = original;
+		u.uVideo!.value = false;
+		still.dispose();
+		video.dispose();
+		return { difference, changed };
+	});
+	expect(result.difference).toBeLessThanOrEqual(2);
+	expect(result.changed).toBeGreaterThan(100);
+});

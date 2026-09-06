@@ -202,6 +202,7 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 	let tuner: Tuner | null = null;
 	let texMix = 0;
 	let texWanted = 0;
+	let channelReady = false;
 
 	/*
 	 * Захват синхронизации. Картинка не выцеловывается из шума плавно —
@@ -240,6 +241,8 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 			url,
 			onChannel: (texture) => {
 				tv.screenMat.uniforms.uTex!.value = texture;
+				tv.screenMat.uniforms.uVideo!.value = true;
+				channelReady = true;
 				// В воздухе картинку не показываем даже когда ролик доехал:
 				// там положено быть шуму. Включит её касание пола.
 				if (S.grounded) startLock();
@@ -292,7 +295,7 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 			channelPending = false;
 			tuner?.tune();
 		}
-		if (tuner) startLock();
+		if (channelReady) startLock();
 	}
 
 	function flash(amount: number): void {
