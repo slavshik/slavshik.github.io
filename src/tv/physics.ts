@@ -663,6 +663,14 @@ export function stepWorld(w: PhysicsWorld, dt: number): number {
 			push * params.antLift -
 			accW * params.antLever;
 		ant.av += acc * dt;
+		// Сухое трение в шарнире: колено притёрто, и настоящая антенна не
+		// звенит бесконечно — мелкую дрожь она съедает за взмах, а большому
+		// взмаху почти не мешает. Без него рожок затухает по экспоненте, то
+		// есть не останавливается никогда, и телевизор из-за двух дрожащих
+		// усиков не может заснуть ещё две с половиной секунды после того,
+		// как сам замер.
+		const dry = params.antDry * dt;
+		ant.av = Math.abs(ant.av) <= dry ? 0 : ant.av - Math.sign(ant.av) * dry;
 		ant.a += ant.av * dt;
 		// Упор колена: доехав до него, рожок останавливается, а не продолжает
 		// давить в стенку — иначе он залипает в крайнем углу до смены знака.
@@ -673,7 +681,7 @@ export function stepWorld(w: PhysicsWorld, dt: number): number {
 			ant.a = ANT_LIM;
 			if (ant.av > 0) ant.av = 0;
 		}
-		if (Math.abs(ant.a) > 0.01 || Math.abs(ant.av) > 0.05) antRinging = true;
+		if (Math.abs(ant.a) > 0.012 || Math.abs(ant.av) > 0.06) antRinging = true;
 	}
 
 	// Сон: иначе корпус вечно микро-дрожит на полу

@@ -53,9 +53,13 @@ test('кнопки стенда дёргают телевизор, а не па�
 });
 
 test('за шнур телевизор поднимается в воздух', async ({ page }) => {
-	// Тест ждёт физику, а не разметку, и в CI она идёт втрое медленнее
-	// реального времени: цикл берёт не больше MAX_SUB шагов на кадр.
-	test.setTimeout(90_000);
+	// Тест ждёт физику, а не разметку, и в CI она идёт куда медленнее
+	// реального времени: цикл берёт не больше MAX_SUB шагов на кадр и остаток
+	// выбрасывает, так что на медленной машине это прямая замедленная съёмка —
+	// при 5 кадрах в секунду модельное время идёт впятеро медленнее живого.
+	// Числа ниже поэтому не мера физики, а страховка от зависания, и держать
+	// их надо с запасом: на desktop бюджет в 30 с уже сжигался целиком.
+	test.setTimeout(180_000);
 
 	/*
 	 * Мышью это проверяется только там, где вилка видна на экране, а её место
@@ -89,7 +93,7 @@ test('за шнур телевизор поднимается в воздух', 
 	// ждать его целиком — то же ожидание по часам, только длиннее.
 	await page.locator('[data-act="reset"]').click();
 	const asleep = (): Promise<boolean> => page.evaluate(() => window.tv.internals.state.sleeping);
-	await expect.poll(asleep, { timeout: 30_000 }).toBe(true);
+	await expect.poll(asleep, { timeout: 60_000 }).toBe(true);
 
 	const before = await page.evaluate(() => window.tv.internals.state.y);
 	const peak = await page.evaluate(
@@ -116,7 +120,7 @@ test('за шнур телевизор поднимается в воздух', 
 	expect(peak.flew).toBe(true);
 
 	// Отпустили — телевизор падает обратно и снова засыпает там, где стоял.
-	await expect.poll(asleep, { timeout: 30_000 }).toBe(true);
+	await expect.poll(asleep, { timeout: 60_000 }).toBe(true);
 	const after = await page.evaluate(() => window.tv.internals.state.y);
 	expect(Math.abs(after - before)).toBeLessThan(0.05);
 });
