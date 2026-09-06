@@ -131,6 +131,8 @@ test('экран декодирует видео как sRGB и сохраняе
 	const result = await page.evaluate(() => {
 		const I = window.tv.internals;
 		I.setPaused(true);
+		I.parts.body.position.set(I.env.homeX, 0.5, 0);
+		I.parts.body.rotation.z = 0;
 		const u = I.parts.screenMat.uniforms;
 		const original = u.uTex!.value as import('three').DataTexture;
 		const Texture = original.constructor as typeof import('three').DataTexture;
@@ -142,7 +144,8 @@ test('экран декодирует видео как sRGB и сохраняе
 		video.needsUpdate = true;
 		const gl = I.renderer.getContext();
 		const capture = (): Uint8Array => {
-			I.renderer.render(I.scene, I.camera);
+			I.bloom.setFlicker(1);
+			I.bloom.render(I.scene, I.camera);
 			const data = new Uint8Array(gl.drawingBufferWidth * gl.drawingBufferHeight * 4);
 			gl.readPixels(
 				0,
@@ -170,6 +173,10 @@ test('экран декодирует видео как sRGB и сохраняе
 		u.uTexMix!.value = 0;
 		u.uTime!.value = 86400;
 		const snow = capture();
+		const repeated = capture();
+		let frozenDifference = 0;
+		for (let i = 0; i < snow.length; i++)
+			frozenDifference = Math.max(frozenDifference, Math.abs(snow[i]! - repeated[i]!));
 		u.uTime!.value = 86400 + 1 / 30;
 		const next = capture();
 		let changed = 0;
@@ -178,8 +185,122 @@ test('экран декодирует видео как sRGB и сохраняе
 		u.uVideo!.value = false;
 		still.dispose();
 		video.dispose();
-		return { difference, changed };
+		return { difference, changed, frozenDifference };
 	});
 	expect(result.difference).toBeLessThanOrEqual(2);
 	expect(result.changed).toBeGreaterThan(100);
+	expect(result.frozenDifference).toBe(0);
+});
+
+test('сияние следует яркости, сохраняет полутона и скрыто корпусом', async ({ page }) => {
+	await page.goto('/lab/tv.html');
+	await page.waitForSelector('#tv-stage canvas');
+	const result = await page.evaluate(() => {
+		const I = window.tv.internals;
+		I.setPaused(true);
+		I.parts.body.position.set(I.env.homeX, 0.5, 0);
+		I.parts.body.rotation.z = 0;
+		const u = I.parts.screenMat.uniforms;
+		const original = u.uTex!.value as import('three').DataTexture;
+		const Texture = original.constructor as typeof import('three').DataTexture;
+		const pixels = new Uint8Array([0, 0, 0, 255]);
+		const tex = new Texture(pixels, 1, 1);
+		tex.colorSpace = 'srgb';
+		u.uTex!.value = tex;
+		u.uVideo!.value = false;
+		u.uTexMix!.value = 1;
+		u.uIntensity!.value = 1;
+		u.uRoll!.value = 0;
+		I.parts.screen.scale.y = 1;
+		I.parts.screenGlass.scale.y = 1;
+		I.bloom.setFlicker(1);
+		const gl = I.renderer.getContext();
+		const capture = (strength: number): Uint8Array => {
+			I.bloom.setStrength(strength);
+			I.bloom.render(I.scene, I.camera);
+			const data = new Uint8Array(gl.drawingBufferWidth * gl.drawingBufferHeight * 4);
+			gl.readPixels(
+				0,
+				0,
+				gl.drawingBufferWidth,
+				gl.drawingBufferHeight,
+				gl.RGBA,
+				gl.UNSIGNED_BYTE,
+				data,
+			);
+			return data;
+		};
+		const difference = (a: Uint8Array, b: Uint8Array): number => {
+			let sum = 0;
+			for (let i = 0; i < a.length; i++) sum += Math.abs(a[i]! - b[i]!);
+			return sum;
+		};
+		tex.needsUpdate = true;
+		const black = difference(capture(0), capture(1));
+		const steps: number[] = [];
+		let whiteGlow = 0;
+		let interiorDelta = 0,
+			interiorPixels = 0;
+		for (const value of [0, 32, 96, 160, 208, 232, 248, 255]) {
+			pixels.fill(value, 0, 3);
+			tex.needsUpdate = true;
+			const data = capture(1);
+			let sum = 0;
+			for (let i = 0; i < data.length; i += 4) sum += data[i]! + data[i + 1]! + data[i + 2]!;
+			steps.push(sum);
+			if (value === 255) {
+				const off = capture(0);
+				whiteGlow = difference(data, off);
+				const w = gl.drawingBufferWidth,
+					h = gl.drawingBufferHeight;
+				const bright = (x: number, y: number): boolean => {
+					const i = (y * w + x) * 4;
+					return off[i]! > 210 && off[i + 1]! > 210 && off[i + 2]! > 210;
+				};
+				// Only picture pixels at least ten pixels from its bright boundary.
+				for (let y = 10; y < h - 10; y++)
+					for (let x = 10; x < w - 10; x++) {
+						if (
+							!bright(x, y) ||
+							!bright(x - 10, y - 10) ||
+							!bright(x + 10, y - 10) ||
+							!bright(x - 10, y + 10) ||
+							!bright(x + 10, y + 10)
+						)
+							continue;
+						interiorPixels++;
+						const i = (y * w + x) * 4;
+						for (let c = 0; c < 3; c++)
+							interiorDelta = Math.max(
+								interiorDelta,
+								Math.abs(data[i + c]! - off[i + c]!),
+							);
+					}
+			}
+		}
+		const scissor = I.renderer.setScissorTest;
+		const unclipped: number[] = [];
+		const angle = I.parts.tilt.rotation.y;
+		for (const yaw of [angle, 0.8, -1.3]) {
+			I.parts.tilt.rotation.y = yaw;
+			const bounded = capture(1);
+			I.renderer.setScissorTest = () => {};
+			const full = capture(1);
+			I.renderer.setScissorTest = scissor;
+			unclipped.push(difference(bounded, full));
+		}
+		I.parts.tilt.rotation.y = angle + Math.PI;
+		const rear = difference(capture(0), capture(1));
+		u.uTex!.value = original;
+		tex.dispose();
+		return { black, whiteGlow, steps, rear, unclipped, interiorDelta, interiorPixels };
+	});
+	expect(result.black).toBe(0);
+	expect(result.whiteGlow).toBeGreaterThan(100);
+	expect(result.interiorPixels).toBeGreaterThan(50);
+	expect(result.interiorDelta).toBeLessThanOrEqual(2);
+	expect(result.rear).toBe(0);
+	expect(result.unclipped).toEqual([0, 0, 0]);
+	for (let i = 1; i < result.steps.length; i++)
+		expect(result.steps[i]!).toBeGreaterThan(result.steps[i - 1]!);
 });

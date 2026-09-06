@@ -9,7 +9,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
-import type { BodyRole, GrainSpec, MaterialSpec, ShapeSpec } from './look.js';
+import type { BodyRole, GrainSpec, MaterialSpec, ScreenEffectsSpec, ShapeSpec } from './look.js';
 import type { Palette } from './palette.js';
 import { BLOOM_LAYER } from './bloom.js';
 import { SCREEN_FRAG, SCREEN_VERT } from './shaders.js';
@@ -239,6 +239,7 @@ export function buildCabinet(
 	mats: Materials,
 	accent: string,
 	grain: GrainSpec,
+	effects: ScreenEffectsSpec,
 ): Cabinet {
 	const disposables: Disposable[] = [];
 	const keep = <T extends Disposable>(x: T): T => (disposables.push(x), x);
@@ -328,6 +329,10 @@ export function buildCabinet(
 				uTex: { value: blankTex },
 				uTexMix: { value: 0 },
 				uVideo: { value: false },
+				uExposure: { value: effects.exposure },
+				uSaturation: { value: effects.saturation },
+				uGlowColor: { value: new THREE.Color(effects.glowColor) },
+				uGlassEdge: { value: effects.glassEdgeIntensity },
 			},
 		}),
 	);
@@ -365,7 +370,12 @@ export function buildCabinet(
 	tilt.add(screenGlass);
 
 	// Свет трубки, падающий на рамку изнутри
-	const glow = new THREE.PointLight(new THREE.Color(accent), 0, spec.glow.dist, spec.glow.decay);
+	const glow = new THREE.PointLight(
+		new THREE.Color(effects.glowColor),
+		0,
+		spec.glow.dist,
+		spec.glow.decay,
+	);
 	glow.position.set(0, 0, spec.glow.z);
 	tilt.add(glow);
 

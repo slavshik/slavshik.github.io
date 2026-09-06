@@ -35,7 +35,7 @@ import {
 } from './constants.js';
 import { createInput } from './input.js';
 import { createLayout } from './layout.js';
-import { createBloom } from './bloom.js';
+import { createBloom, type Bloom } from './bloom.js';
 import { createLighting } from './lighting.js';
 import { LOOK } from './look.js';
 import { readPalette, type Palette } from './palette.js';
@@ -83,6 +83,7 @@ export interface TvInternals {
 	/** Стенду — чтобы дёрнуть за вилку без мыши. */
 	plugHold: PlugHold;
 	renderer: THREE.WebGLRenderer;
+	bloom: Bloom;
 	scene: THREE.Scene;
 	camera: THREE.PerspectiveCamera;
 	rig: THREE.Group;
@@ -136,7 +137,7 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 	   берётся из уже нарисованного кадра, поэтому оно само следует за
 	   картинкой: тёмный кадр почти не светит, снег светит ровно. Мигает им
 	   uFlicker — розжиг, вспышка от удара, срыв кадра. */
-	const bloom = createBloom(renderer);
+	const bloom = createBloom(renderer, LOOK.screenEffects);
 
 	const rig = new THREE.Group();
 	scene.add(rig);
@@ -355,7 +356,7 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 		u.uRoll!.value = roll;
 		u.uTexMix!.value = texMix;
 		u.uIntensity!.value = ease + flashV;
-		tv.glow.intensity = (0.5 + flashV * 2.5) * ease;
+		tv.glow.intensity = (1 + flashV * 5) * LOOK.screenEffects.lightSpillIntensity * ease;
 		// Яркость сияния: розжиг, передача чуть ярче снега, удар вспыхивает.
 		// Форма сюда не приходит — её даёт сам кадр.
 		bloom.setFlicker((0.55 + 0.45 * texMix + flashV * 1.7) * ease);
@@ -445,7 +446,7 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 		pal = readPalette(forceDark);
 		const accent = new THREE.Color(pal.accent);
 		(tv.screenMat.uniforms.uAccent!.value as THREE.Color).copy(accent);
-		tv.glow.color.copy(accent);
+		tv.glow.color.set(LOOK.screenEffects.glowColor);
 		lighting.refresh(pal);
 		tv.body.traverse((o) => {
 			const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
@@ -707,6 +708,7 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 		scene,
 		camera,
 		rig,
+		bloom,
 		parts: tv,
 		wake,
 		flash,

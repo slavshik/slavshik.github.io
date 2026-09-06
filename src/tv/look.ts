@@ -166,7 +166,22 @@ export interface LightSpec {
 	toneMapping: 'none' | 'aces' | 'agx' | 'neutral';
 }
 
+export interface ScreenEffectsSpec {
+	exposure: number;
+	saturation: number;
+	glowColor: string;
+	tightStrength: number;
+	broadStrength: number;
+	/** Blur radii in CSS pixels, independent of DPR. */
+	tightRadius: number;
+	broadRadius: number;
+	interiorSuppression: number;
+	glassEdgeIntensity: number;
+	lightSpillIntensity: number;
+}
+
 export interface LookSpec {
+	screenEffects: ScreenEffectsSpec;
 	shape: ShapeSpec;
 	lights: LightSpec;
 	materials: Record<BodyRole, MaterialSpec>;
@@ -175,6 +190,18 @@ export interface LookSpec {
 }
 
 export const LOOK: LookSpec = {
+	screenEffects: {
+		exposure: 1.08,
+		saturation: 1.06,
+		glowColor: '#79bfff',
+		tightStrength: 0.5,
+		broadStrength: 0.65,
+		tightRadius: 2,
+		broadRadius: 8,
+		interiorSuppression: 1,
+		glassEdgeIntensity: 0.65,
+		lightSpillIntensity: 0.22,
+	},
 	shape: {
 		// Углы скруглены крупно — главный приём игрушечного силуэта
 		body: { w: BODY_W, h: BODY_H, d: BODY_D, round: 0.15, roundSegs: 8 },

@@ -1,34 +1,14 @@
-/*
- * Сияние экрана: маленький пост-процесс на четыре прохода.
- *
- * Что было раньше: перед трубкой висел плоский меш с нарисованным на канвасе
- * радиальным градиентом. Он не знал про картинку вообще — светился одинаково
- * и на снеге, и на тёмном кадре, и на лице, — а на его пологом градиенте в
- * восьми битах шли кольца, которые видно на светлом фоне страницы.
- *
- * Что вместо: сцена уходит в буфер, из буфера берётся то, что ярче порога,
- * размывается и складывается обратно. Форма сияния теперь и есть картинка на
- * экране, размытая: тёмный кадр почти не светит, снег светит ровно, яркое
- * пятно в кадре даёт яркое пятно в воздухе. Ничего не надо подгонять руками —
- * оно так получается.
- *
- * Почему не UnrealBloomPass из three/addons: он тянет за собой EffectComposer,
- * RenderPass, ShaderPass, CopyShader и LuminosityHighPassShader и строит пять
- * уровней мипов. Это пять пар буферов и лишние килобайты в чанке, которому и
- * так осталось восемь до потолка. Здесь один уровень, четыре прохода и три
- * шейдера на полсотни строк.
- *
- * Дешевизна — не про красоту, а про то, что телевизор занимает четверть
- * экрана и рисуется только когда шевелится. Буферы вчетверо меньше канваса:
- * сияние всё равно размыто, и разрешение ему не нужно.
- */
-
 import * as THREE from 'three';
+
+import type { ScreenEffectsSpec } from './look.js';
 
 import { BLOOM_BLUR, BLOOM_MIX, FS_VERT } from './shaders.js';
 
 /** Во сколько раз буферы сияния меньше канваса по каждой стороне. */
-const DOWN = 6;
+const DOWN = 4;
+const SCREEN_DEPTH_VERT = `void main() {
+ gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}`;
 
 /**
  * Слой, на котором лежит то, что светится. Сейчас там ровно один объект —
@@ -54,22 +34,14 @@ export interface Bloom {
 	 */
 	setFlicker(v: number): void;
 	setStrength(v: number): void;
+	apply(spec: ScreenEffectsSpec): void;
 	dispose(): void;
 }
 
 /*
- * Буферы линейные, и перевод в sRGB делает композит — руками.
- *
- * Three кодирует кадр в sRGB только когда рисует на канвас; в буфер он
- * уходит линейным. Первый композит писал линейное прямо на канвас, тот читал
- * как sRGB — корпус становился бурым, а рамка ядовито-жёлтой. Похоже на
- * пересвет от сияния, но проверка с нулевой его силой дала ту же картинку:
- * (190,184,146) → (100,92,20), синий канал раздавлен. Сияние ни при чём.
- *
- * Пометить буфер как SRGBColorSpace не помогло — картинка не изменилась ни
- * на пиксель, поэтому перевод живёт в шейдере композита. Так даже вернее:
- * размытие и сложение идут в линейном свете, где складывать яркости и
- * положено, и только результат уходит в sRGB.
+ * The base scene keeps its direct canvas color-output path. Only emission
+ * enters linear targets; each vertical blur encodes its result for the
+ * additive canvas overlay. Coverage remains unblurred in a separate target.
  */
 function target(w: number, h: number): THREE.WebGLRenderTarget {
 	const t = new THREE.WebGLRenderTarget(w, h, {
@@ -85,7 +57,7 @@ function target(w: number, h: number): THREE.WebGLRenderTarget {
 	return t;
 }
 
-export function createBloom(renderer: THREE.WebGLRenderer): Bloom {
+export function createBloom(renderer: THREE.WebGLRenderer, spec: ScreenEffectsSpec): Bloom {
 	// Сцена под полноэкранный треугольник: одна на все три прохода, материал
 	// подменяется. Камера ортографическая и ничего не делает — вершинный
 	// шейдер и так пишет в клип-пространство напрямую.
@@ -123,17 +95,14 @@ export function createBloom(renderer: THREE.WebGLRenderer): Bloom {
 		fragmentShader: BLOOM_MIX,
 		uniforms: {
 			uBloom: { value: null },
-			/* Сила сияния. При 0.2 замер по кадру даёт прибавку не больше 32
-			   из 255, на пятне вокруг трубки примерно 150×130 пикселей, и
-			   ничего не уходит в чистый белый.
+			uBroad: { value: null },
+			uCoverage: { value: null },
+			uColor: { value: new THREE.Color() },
+			uTight: { value: 0 },
+			uBroadStrength: { value: 0 },
+			uSuppression: { value: 1 },
 
-			   Мерить это надо принудительным снимком, а не эталоном. Эталоны
-			   тут не двигаются вовсе: toHaveScreenshot считает пиксели,
-			   разошедшиеся сверх порога цвета, а threshold в конфиге не задан
-			   и равен 0.2 по умолчанию — свечение целиком проходит под него.
-			   Из-за этого e2e-update не переписывает снимок, и сравнение
-			   «эталон против эталона» показывает ноль отличий при любой силе. */
-			uStrength: { value: 0.2 },
+			uStrength: { value: 1 },
 			uFlicker: { value: 0 },
 		},
 		depthTest: false,
@@ -154,10 +123,58 @@ export function createBloom(renderer: THREE.WebGLRenderer): Bloom {
 	fsMesh.frustumCulled = false;
 	fsScene.add(fsMesh);
 
+	const coverage = target(1, 1);
+	coverage.depthBuffer = true;
+	coverage.samples = 4;
 	const ping = target(1, 1);
 	const pong = target(1, 1);
-	let bw = 1;
-	let bh = 1;
+	const broadPing = target(1, 1);
+	const broadPong = target(1, 1);
+	const black = new THREE.ShaderMaterial({
+		vertexShader: SCREEN_DEPTH_VERT,
+		fragmentShader: 'void main() { gl_FragColor = vec4(0.0); }',
+	});
+	const hidden = new THREE.MeshBasicMaterial({ visible: false });
+	let emitter: THREE.Mesh | null = null;
+	const corner = new THREE.Vector3();
+	const savedScissor = new THREE.Vector4();
+	let width = 1,
+		height = 1;
+	const originals = new WeakMap<THREE.Mesh, THREE.Material | THREE.Material[]>();
+	// Stable callbacks and weak storage: no per-frame arrays or material creation.
+	function darken(object: THREE.Object3D): void {
+		if (!(object instanceof THREE.Mesh)) return;
+		if (object.layers.isEnabled(BLOOM_LAYER)) {
+			emitter = object;
+			return;
+		}
+		originals.set(object, object.material);
+		const material = object.material;
+		object.material =
+			!Array.isArray(material) && (material.transparent || !material.visible)
+				? hidden
+				: black;
+	}
+	function restore(object: THREE.Object3D): void {
+		if (!(object instanceof THREE.Mesh)) return;
+		const material = originals.get(object);
+		if (material) object.material = material;
+	}
+	let bw = 1,
+		bh = 1,
+		ww = 1,
+		wh = 1,
+		pixelRatio = 1;
+	let current = spec;
+	function apply(next: ScreenEffectsSpec): void {
+		current = next;
+		// Composite operates in the canvas output space.
+		(mixMat.uniforms.uColor!.value as THREE.Color).set(next.glowColor).convertLinearToSRGB();
+		mixMat.uniforms.uTight!.value = next.tightStrength;
+		mixMat.uniforms.uBroadStrength!.value = next.broadStrength;
+		mixMat.uniforms.uSuppression!.value = next.interiorSuppression;
+	}
+	apply(spec);
 
 	function draw(mat: THREE.ShaderMaterial, to: THREE.WebGLRenderTarget | null): void {
 		fsMesh.material = mat;
@@ -167,11 +184,20 @@ export function createBloom(renderer: THREE.WebGLRenderer): Bloom {
 	}
 
 	return {
+		apply,
 		setSize(w, h, dpr) {
+			width = w;
+			height = h;
 			const pw = Math.max(1, Math.round(w * dpr));
 			const ph = Math.max(1, Math.round(h * dpr));
 			bw = Math.max(1, Math.round(pw / DOWN));
 			bh = Math.max(1, Math.round(ph / DOWN));
+			pixelRatio = dpr;
+			ww = Math.max(1, Math.round(pw / 12));
+			wh = Math.max(1, Math.round(ph / 12));
+			coverage.setSize(bw, bh);
+			broadPing.setSize(ww, wh);
+			broadPong.setSize(ww, wh);
 			ping.setSize(bw, bh);
 			pong.setSize(bw, bh);
 		},
@@ -185,24 +211,48 @@ export function createBloom(renderer: THREE.WebGLRenderer): Bloom {
 		},
 
 		render(scene, camera) {
-			// 1. Только светящееся, сразу в маленький буфер: камера
-			//    переключается на слой сияния, и в кадр не попадает ничего,
-			//    кроме люминофора.
-			camera.layers.set(BLOOM_LAYER);
-			renderer.setRenderTarget(ping);
+			const autoClear = renderer.autoClear;
+			const background = scene.background;
+			scene.background = null;
+			scene.traverse(darken);
+			renderer.setRenderTarget(coverage);
 			renderer.clear();
-			renderer.render(scene, camera);
-			camera.layers.set(0);
+			try {
+				renderer.render(scene, camera);
+			} finally {
+				scene.traverse(restore);
+				scene.background = background;
+			}
 
-			// 2. Два прохода размытия, по оси за проход
-			blurMat.uniforms.uSrc!.value = ping.texture;
-			(blurMat.uniforms.uDir!.value as THREE.Vector2).set(1 / bw, 0);
+			blurMat.uniforms.uSrc!.value = coverage.texture;
+			(blurMat.uniforms.uDir!.value as THREE.Vector2).set(
+				(current.tightRadius * pixelRatio) / (bw * DOWN),
+				0,
+			);
 			blurMat.uniforms.uEncode!.value = 0;
 			draw(blurMat, pong);
 			blurMat.uniforms.uSrc!.value = pong.texture;
-			(blurMat.uniforms.uDir!.value as THREE.Vector2).set(0, 1 / bh);
+			(blurMat.uniforms.uDir!.value as THREE.Vector2).set(
+				0,
+				(current.tightRadius * pixelRatio) / (bh * DOWN),
+			);
 			blurMat.uniforms.uEncode!.value = 1;
 			draw(blurMat, ping);
+
+			blurMat.uniforms.uSrc!.value = coverage.texture;
+			(blurMat.uniforms.uDir!.value as THREE.Vector2).set(
+				(current.broadRadius * pixelRatio) / (ww * 12),
+				0,
+			);
+			blurMat.uniforms.uEncode!.value = 0;
+			draw(blurMat, broadPong);
+			blurMat.uniforms.uSrc!.value = broadPong.texture;
+			(blurMat.uniforms.uDir!.value as THREE.Vector2).set(
+				0,
+				(current.broadRadius * pixelRatio) / (wh * 12),
+			);
+			blurMat.uniforms.uEncode!.value = 1;
+			draw(blurMat, broadPing);
 
 			// 3. Сцена на канвас — как и до всякой пост-обработки
 			renderer.setRenderTarget(null);
@@ -211,13 +261,54 @@ export function createBloom(renderer: THREE.WebGLRenderer): Bloom {
 
 			// 4. Сияние сверху. Очистку выключаем: кадр под ним уже нарисован.
 			mixMat.uniforms.uBloom!.value = ping.texture;
+			mixMat.uniforms.uBroad!.value = broadPing.texture;
+			mixMat.uniforms.uCoverage!.value = coverage.texture;
+			// Bound the full-resolution overlay to the screen plus the complete
+			// blur kernel. This matters more than blur taps on large canvases.
+			renderer.getScissor(savedScissor);
+			const scissorTest = renderer.getScissorTest();
+			if (emitter) {
+				const geometry = emitter.geometry;
+				if (!geometry.boundingBox) geometry.computeBoundingBox();
+				const box = geometry.boundingBox!;
+				let left = Infinity,
+					right = -Infinity,
+					bottom = Infinity,
+					top = -Infinity;
+				for (let i = 0; i < 8; i++) {
+					corner.set(
+						i & 1 ? box.max.x : box.min.x,
+						i & 2 ? box.max.y : box.min.y,
+						i & 4 ? box.max.z : box.min.z,
+					);
+					corner.applyMatrix4(emitter.matrixWorld).project(camera);
+					left = Math.min(left, corner.x);
+					right = Math.max(right, corner.x);
+					bottom = Math.min(bottom, corner.y);
+					top = Math.max(top, corner.y);
+				}
+				const margin = 8 * Math.max(current.tightRadius, current.broadRadius) + 4;
+				const x = Math.max(0, Math.floor(((left + 1) * width) / 2 - margin));
+				const y = Math.max(0, Math.floor(((bottom + 1) * height) / 2 - margin));
+				const r = Math.min(width, Math.ceil(((right + 1) * width) / 2 + margin));
+				const t = Math.min(height, Math.ceil(((top + 1) * height) / 2 + margin));
+				renderer.setScissor(x, y, Math.max(0, r - x), Math.max(0, t - y));
+				renderer.setScissorTest(true);
+			}
 			renderer.autoClear = false;
 			fsMesh.material = mixMat;
 			renderer.render(fsScene, fsCam);
-			renderer.autoClear = true;
+			renderer.autoClear = autoClear;
+			renderer.setScissor(savedScissor);
+			renderer.setScissorTest(scissorTest);
 		},
 
 		dispose() {
+			coverage.dispose();
+			broadPing.dispose();
+			broadPong.dispose();
+			black.dispose();
+			hidden.dispose();
 			ping.dispose();
 			pong.dispose();
 			fsGeo.dispose();

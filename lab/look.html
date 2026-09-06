@@ -182,6 +182,7 @@
     import { CAM_DIST, FOV } from '/src/tv/constants.ts';
     import { LOOK } from '/src/tv/look.ts';
     import { buildCabinet, buildMaterials } from '/src/tv/cabinet.ts';
+    import { createBloom } from '/src/tv/bloom.ts';
     import { createLighting } from '/src/tv/lighting.ts';
     import { readPalette } from '/src/tv/palette.ts';
 
@@ -291,6 +292,50 @@
 
     const pal0 = palette();
     const lighting = createLighting(scene, renderer, pal0, spec.lights);
+    const bloom = createBloom(renderer, spec.screenEffects);
+    bloom.setFlicker(1);
+    renderer.info.autoReset = false;
+    let previewTexture = null;
+    let previewRequest = 0;
+    const preview = document.createElement('input');
+    preview.type = 'file';
+    preview.accept = 'image/*';
+    preview.setAttribute('aria-label', 'Локальное фото');
+    const previewControls = document.createElement('div');
+    previewControls.className = 'actions';
+    previewControls.style.marginTop = '2.5rem';
+    preview.style.width = '100%';
+    previewControls.append(preview);
+    document.getElementById('panel').prepend(previewControls);
+    preview.addEventListener('change', async () => {
+      const file = preview.files[0];
+      if (!file) return;
+      const request = ++previewRequest;
+      const url = URL.createObjectURL(file);
+      try {
+        const texture = await new THREE.TextureLoader().loadAsync(url);
+        if (request !== previewRequest) { texture.dispose(); return; }
+        texture.colorSpace = THREE.SRGBColorSpace;
+        previewTexture?.dispose();
+        previewTexture = texture;
+        dirty = true;
+      } finally { URL.revokeObjectURL(url); }
+    });
+    const snow = document.createElement('button');
+    snow.textContent = 'Снег';
+    snow.addEventListener('click', () => {
+      previewRequest++; previewTexture?.dispose(); previewTexture = null; preview.value = ''; dirty = true;
+    });
+    preview.after(snow);
+    const glowToggle = document.createElement('button');
+    let glowEnabled = true;
+    glowToggle.textContent = 'Сияние: вкл';
+    glowToggle.addEventListener('click', () => {
+      glowEnabled = !glowEnabled;
+      bloom.setStrength(glowEnabled ? 1 : 0);
+      glowToggle.textContent = glowEnabled ? 'Сияние: вкл' : 'Сияние: выкл';
+    });
+    snow.after(glowToggle);
 
     /* Настоящих теней здесь нет, и это не упущение: тюнить ими нечего. На
        странице телевизор висит над текстом, пола под ним не бывает, и
@@ -322,12 +367,18 @@
       }
       const pal = palette();
       mats = buildMaterials(pal, spec.materials);
-      cab = buildCabinet(spec.shape, mats, pal.accent, spec.grain);
+      cab = buildCabinet(spec.shape, mats, pal.accent, spec.grain, spec.screenEffects);
       // Розжига здесь нет: экран сразу включён и шумит
       cab.screen.scale.y = 1;
       cab.screenGlass.scale.y = 1;
       cab.screenMat.uniforms.uIntensity.value = 1;
-      cab.glow.intensity = 0.5;
+      cab.glow.intensity = spec.screenEffects.lightSpillIntensity;
+      bloom.apply(spec.screenEffects);
+      if (previewTexture) {
+        cab.screenMat.uniforms.uTex.value = previewTexture;
+        cab.screenMat.uniforms.uTexMix.value = 1;
+      }
+      stage.dataset.preview = previewTexture ? 'image' : 'snow';
       root.add(cab.tilt);
       applyView();
       fitCamera();
@@ -364,6 +415,18 @@
         ['суж. до', 'shape.taper.end', -0.5, 1],
         ['наклон X', 'shape.tilt.x', -0.6, 0.6],
         ['разворот Y', 'shape.tilt.y', -1.5, 1.5],
+      ]],
+      ['экран: свет', true, [
+        ['экспозиция фото', 'screenEffects.exposure', 1, 1.3],
+        ['насыщенность', 'screenEffects.saturation', 0.8, 1.2],
+        ['#', 'цвет сияния', 'screenEffects.glowColor'],
+        ['ближнее сияние', 'screenEffects.tightStrength', 0, 1],
+        ['дальний ореол', 'screenEffects.broadStrength', 0, 1],
+        ['ближний радиус', 'screenEffects.tightRadius', 0.5, 8],
+        ['дальний радиус', 'screenEffects.broadRadius', 2, 20],
+        ['защита картинки', 'screenEffects.interiorSuppression', 0, 1],
+        ['край стекла', 'screenEffects.glassEdgeIntensity', 0, 1],
+        ['свет на рамке', 'screenEffects.lightSpillIntensity', 0, 1],
       ]],
       ['рамка', false, [
         ['ширина', 'shape.bezel.w', 0.4, 1.1],
@@ -661,7 +724,7 @@
       });
 
       mkBtn('снимок', () => {
-        renderer.render(scene, camera);
+        bloom.render(scene, camera);
         renderer.domElement.toBlob((blob) => {
           if (blob) download(blob, 'tv-look.png');
         });
@@ -717,21 +780,25 @@
       const w = stage.clientWidth;
       const h = stage.clientHeight;
       renderer.setSize(w, h);
+      bloom.setSize(w, h, renderer.getPixelRatio());
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       fitCamera();
     }
-    new ResizeObserver(resize).observe(stage);
+    const resizeObserver = new ResizeObserver(resize);
+    resizeObserver.observe(stage);
     resize();
 
     const hud = document.getElementById('hud');
     let frames = 0;
     let hudAt = performance.now();
 
+    const frozen = new URLSearchParams(location.search).has("aqa");
+    let frameId = 0;
     let clock = 0;
     let last = performance.now();
     function frame(now) {
-      requestAnimationFrame(frame);
+      frameId = requestAnimationFrame(frame);
       const dt = Math.min((now - last) / 1000, 0.25);
       last = now;
       clock += dt;
@@ -741,8 +808,9 @@
         rebuild();
       }
 
-      cab.screenMat.uniforms.uTime.value = clock;
-      renderer.render(scene, camera);
+      cab.screenMat.uniforms.uTime.value = frozen ? 0 : clock;
+      renderer.info.reset();
+      bloom.render(scene, camera);
 
       frames++;
       if (now - hudAt > 500) {
@@ -755,8 +823,23 @@
       }
     }
 
+    addEventListener('pagehide', (event) => {
+      if (event.persisted) return;
+      cancelAnimationFrame(frameId);
+      resizeObserver.disconnect();
+      previewRequest++;
+      previewTexture?.dispose();
+      bloom.dispose();
+      lighting.dispose();
+      for (const d of cab.disposables) d.dispose();
+      for (const d of mats.disposables) d.dispose();
+      backdrop.geometry.dispose();
+      backdrop.material.dispose();
+      renderer.dispose();
+    });
+
     rebuild();
-    requestAnimationFrame(frame);
+    frameId = requestAnimationFrame(frame);
   </script>
 </body>
 </html>

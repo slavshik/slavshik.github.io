@@ -8,8 +8,11 @@
 
 export const SCREEN_VERT = /* glsl */ `
   varying vec2 vUv;
+  varying vec3 vNormal, vView;
   void main() {
     vUv = uv;
+    vNormal = normalize(normalMatrix * normal);
+    vView = -(modelViewMatrix * vec4(position, 1.0)).xyz;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
 `;
@@ -17,7 +20,9 @@ export const SCREEN_VERT = /* glsl */ `
 export const SCREEN_FRAG = /* glsl */ `
   varying vec2 vUv;
   uniform float uTime, uIntensity, uRoll, uTexMix;
-  uniform vec3  uAccent;
+  uniform vec3  uAccent, uGlowColor;
+  varying vec3 vNormal, vView;
+  uniform float uExposure, uSaturation, uGlassEdge;
   uniform sampler2D uTex;
   uniform bool uVideo;
 
@@ -79,9 +84,12 @@ export const SCREEN_FRAG = /* glsl */ `
     // декодирования three: делаем его здесь, только для видео.
     if (uVideo) sampled = sRGBTransferEOTF(sampled);
     vec3 sig = sampled.rgb;
+    float luma = dot(sig, vec3(0.2126, 0.7152, 0.0722));
+    sig = max(mix(vec3(luma), sig, uSaturation), vec3(0.0));
+    // A monotonic shoulder keeps white below clipping and black at zero.
+    sig = sig * uExposure / (1.0 + max(uExposure - 1.0, 0.0) * sig);
 
-    // Передача без примеси снега и без усиления насыщенности/контраста:
-    // сохраняем полутона оригинала, развёртка даёт фактуру люминофора.
+    // Передача без примеси снега; развёртка даёт фактуру люминофора.
     vec3 signal = mix(vec3(n), sig, uTexMix);
 
     // Снег белый: акцент уходит в свечение, а не в сам шум.
@@ -89,6 +97,13 @@ export const SCREEN_FRAG = /* glsl */ `
     col = mix(col, col * uAccent * 1.6, 0.09 * (1.0 - uTexMix));
     col += uAccent * 0.025 * vig * (1.0 - uTexMix);                 // ореол трубки
 
+    vec2 glass = abs(vUv - 0.5) * 2.0;
+    float edge = smoothstep(0.78, 1.0, max(glass.x, glass.y));
+    float grazing = pow(1.0 - abs(dot(normalize(vNormal), normalize(vView))), 2.0);
+    col += uGlowColor * uGlassEdge * edge * (0.2 + grazing) * dot(signal, vec3(0.2126, 0.7152, 0.0722));
+    // Compress the combined picture and edge light, before impact intensity.
+    vec3 shoulder = max(col - 0.75, vec3(0.0));
+    col = min(col, vec3(0.75)) + shoulder / (1.0 + 4.0 * shoulder);
     gl_FragColor = vec4(col * uIntensity, 1.0);
 
     #include <colorspace_fragment>
@@ -166,15 +181,16 @@ export const BLOOM_BLUR = /* glsl */ `
  */
 export const BLOOM_MIX = /* glsl */ `
   varying vec2 vUv;
-  uniform sampler2D uBloom;
-  uniform float uStrength, uFlicker;
+  uniform sampler2D uBloom, uBroad, uCoverage;
+  uniform vec3 uColor;
+  uniform float uStrength, uFlicker, uTight, uBroadStrength, uSuppression;
   void main() {
-    // Ни одной pow() и ни одного ветвления: этот проход идёт по всему
-    // канвасу, и всё, что можно было посчитать раньше и мельче, посчитано.
-    vec4 bloom = texture2D(uBloom, vUv);
-    // Размытая альфа — покрытие трубки. Внутри убираем световую вуаль,
-    // снаружи сохраняем ореол: ни нового буфера, ни дополнительной выборки.
-    float halo = 1.0 - 0.9 * smoothstep(0.65, 1.0, bloom.a);
-    gl_FragColor = bloom * (uStrength * uFlicker * halo);
+    vec3 tight = texture2D(uBloom, vUv).rgb;
+    vec3 broad = texture2D(uBroad, vUv).rgb;
+    float light = dot(tight, vec3(0.2126, 0.7152, 0.0722)) * uTight
+                + dot(broad, vec3(0.2126, 0.7152, 0.0722)) * uBroadStrength;
+    float halo = 1.0 - uSuppression * texture2D(uCoverage, vUv).a;
+    float strength = light * uStrength * uFlicker * halo;
+    gl_FragColor = vec4(uColor * strength, strength);
   }
 `;

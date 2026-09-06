@@ -7,7 +7,7 @@
  *     оказался тяжелее всего JS с CSS вместе взятых — сплошь на
  *     комментариях, которые с тех пор в dist не уезжают;
  *   — кусок с телевизором меряется и не должен неожиданно распухать. Его
- *     размер задаёт three, а не мы, поэтому потолка в килобайтах нет — есть
+ *     жёсткий потолок — 200 KiB gzip, дополнительно есть
  *     запрет на рост больше чем на 10% от записанного.
  *
  * `node test/size.mjs` — проверить, `node test/size.mjs --update` — записать
@@ -21,10 +21,11 @@ import { join } from 'node:path';
 const DIST = 'dist';
 const BUDGET_FILE = 'test/size-budget.json';
 const PAGE_LIMIT = 10 * 1024; // страница без телевизора, gzip, HTML + JS + CSS
+const TV_LIMIT = 200 * 1024; // жёсткий потолок, KiB gzip
 const TV_GROWTH = 1.1; // насколько куску с телевизором позволено вырасти
 
 const gz = (file) => gzipSync(readFileSync(file), { level: 9 }).length;
-const kb = (n) => `${(n / 1024).toFixed(2)} kB`;
+const kb = (n) => `${(n / 1024).toFixed(2)} KiB`;
 
 const html = readFileSync(join(DIST, 'index.html'), 'utf8');
 const pageAssets = [...html.matchAll(/\/assets\/([\w.-]+\.(?:js|css))/g)].map((m) => m[1]);
@@ -45,7 +46,7 @@ const page =
 	pageAssets.reduce((sum, f) => sum + gz(join(DIST, 'assets', f)), 0);
 const tv = gz(join(DIST, 'assets', tvAsset));
 
-if (process.argv.includes('--update')) {
+if (process.argv.includes('--update') && tv <= TV_LIMIT && page <= PAGE_LIMIT) {
 	writeFileSync(BUDGET_FILE, `${JSON.stringify({ tv }, null, 2)}\n`);
 	console.log(`записано: телевизор ${kb(tv)} (gzip)`);
 	process.exit(0);
@@ -63,6 +64,7 @@ const check = (name, value, limit) => {
 
 console.log('вес, gzip:');
 check(`страница без телевизора (index.html, ${pageAssets.join(', ')})`, page, PAGE_LIMIT);
+check('телевизор: жёсткий бюджет', tv, TV_LIMIT);
 check(`кусок с телевизором (${tvAsset})`, tv, tvLimit);
 
 if (failed) {

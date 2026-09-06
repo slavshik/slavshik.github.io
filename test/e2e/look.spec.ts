@@ -48,3 +48,25 @@ test('ползунок формы пересобирает модель', async 
 	await expect.poll(tris).toBeGreaterThan(before);
 	expect(errors).toEqual([]);
 });
+
+test('локальное фото переживает настройку и возвращается к снегу', async ({ page }) => {
+	await page.goto('/lab/look.html?aqa=1');
+	const canvas = page.locator('#stage canvas');
+	await expect(canvas).toBeVisible();
+	const capture = () =>
+		canvas.screenshot({
+			style: '#panel, #hud, #toggle, #err { visibility: hidden !important; }',
+		});
+	await expect(page.locator('#stage')).toHaveAttribute('data-preview', 'snow');
+	const snow = await capture();
+	await page.getByLabel('Локальное фото').setInputFiles('test/e2e/fixtures/clip.png');
+	await expect(page.locator('#stage')).toHaveAttribute('data-preview', 'image', {
+		timeout: 15000,
+	});
+	expect((await capture()).equals(snow)).toBe(false);
+	await page.locator('.row', { hasText: 'экспозиция фото' }).locator('input').fill('1.15');
+	await page.getByRole('button', { name: 'Снег', exact: true }).click();
+	await expect(page.locator('#stage')).toHaveAttribute('data-preview', 'snow');
+	expect((await capture()).equals(snow)).toBe(true);
+	await expect(page.locator('#err')).toHaveText('');
+});
