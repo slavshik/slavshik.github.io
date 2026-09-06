@@ -9,12 +9,13 @@
 
 PORT   ?= 5173
 URL    := http://localhost:$(PORT)
+TAILSCALE ?= tailscale
 
 PW_IMAGE := mcr.microsoft.com/playwright:v1.62.1-noble
 DOCKER   := docker run --rm -v "$(CURDIR)":/repo -v /repo/node_modules -w /repo
 
 .DEFAULT_GOAL := help
-.PHONY: help install dev lan preview lab look og-lab render check test unit e2e e2e-update \
+.PHONY: help install dev lan tailscale preview lab look og-lab render check test unit e2e e2e-update \
         baselines size syntax build og sitemap format lint stats
 
 help: ## Показать этот список
@@ -37,6 +38,16 @@ lan: ## Dev-сервер, открытый в локальную сеть — т
 	@ipconfig getifaddr en0 2>/dev/null \
 	  | sed 's|^|  с планшета:  http://|; s|$$|:$(PORT)/lab/look.html|' || true
 	@npx vite --host --port $(PORT) --strictPort
+
+tailscale: ## Dev-сервер на Tailscale IP — открыть сайт и Look Lab с iPad
+	@command -v "$(TAILSCALE)" >/dev/null 2>&1 || { echo "Tailscale CLI не найден; задайте TAILSCALE=/path/to/cli" >&2; exit 1; }
+	@set -eu; \
+		tailnet_ip=$$("$(TAILSCALE)" ip -4); \
+		printf '%s\n' "$$tailnet_ip" | awk 'END { exit !(NR == 1 && $$0 ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$$/) }' || \
+			{ echo "Нет Tailscale IPv4: сначала подключите Mac к Tailscale." >&2; exit 1; }; \
+		echo "http://$$tailnet_ip:$(PORT)/ — открыть на iPad с подключённым Tailscale; Ctrl-C для остановки"; \
+		echo "Look Lab: http://$$tailnet_ip:$(PORT)/lab/look.html"; \
+		exec npx vite --host "$$tailnet_ip" --port $(PORT) --strictPort
 
 preview: build ## Отдать собранный сайт — ровно то, что уедет на Pages
 	@npx vite preview --port $(PORT) --strictPort

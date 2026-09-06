@@ -15,6 +15,12 @@ make dev        # → http://localhost:5173
 
 `make help` покажет остальное: `make preview` отдаёт собранный сайт — ровно то, что уедет на Pages, `make test` прогоняет всё.
 
+### Проверка на iPad через Tailscale
+
+Подключите Mac и iPad к одной сети Tailscale и запустите на Mac `make tailscale`. Команда напечатает адрес сайта `http://<tailscale-ip>:5173/` и Look Lab `http://<tailscale-ip>:5173/lab/look.html` — откройте нужный в Safari на iPad. Изменения подхватываются как при `make dev`; Mac должен оставаться включённым и не засыпать, команда — работать. Ctrl-C останавливает сервер.
+
+Команда определяет IPv4 через установленный `tailscale` и привязывает Vite к этому адресу. Если CLI находится вне PATH, укажите `make tailscale TAILSCALE=/path/to/tailscale-cli`. Другой порт задаётся через `make tailscale PORT=9000`. Правила доступа сети Tailscale должны разрешать iPad подключаться к этому порту Mac.
+
 ## Проверки
 
 ```bash
