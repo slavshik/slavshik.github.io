@@ -192,6 +192,15 @@
 
     /* ── Спека: живая копия, «сбросить» возвращает к LOOK ─────────────── */
 
+    // В Frozen mode рисуем только изменения: непрерывный bloom забивает
+    // программный GPU на CI и мешает даже кликам и снимкам Playwright.
+    const frozen = new URLSearchParams(location.search).has('aqa');
+    let frameId = 0;
+    let rendering = false;
+    function requestRender() {
+      if (!frameId && !rendering) frameId = requestAnimationFrame(frame);
+    }
+
     let spec = structuredClone(LOOK);
     const ROLES = Object.keys(LOOK.materials);
 
@@ -239,6 +248,7 @@
     }
 
     function applyCamera() {
+      requestRender();
       orbit.pitch = Math.max(-1.4, Math.min(1.4, orbit.pitch));
       orbit.dist = Math.max(1.2, Math.min(8, orbit.dist));
       const cp = Math.cos(orbit.pitch);
@@ -318,13 +328,13 @@
         texture.colorSpace = THREE.SRGBColorSpace;
         previewTexture?.dispose();
         previewTexture = texture;
-        dirty = true;
+        dirty = true; requestRender();
       } finally { URL.revokeObjectURL(url); }
     });
     const snow = document.createElement('button');
     snow.textContent = 'Снег';
     snow.addEventListener('click', () => {
-      previewRequest++; previewTexture?.dispose(); previewTexture = null; preview.value = ''; dirty = true;
+      previewRequest++; previewTexture?.dispose(); previewTexture = null; preview.value = ''; dirty = true; requestRender();
     });
     preview.after(snow);
     const glowToggle = document.createElement('button');
@@ -332,6 +342,7 @@
     glowToggle.textContent = 'Сияние: вкл';
     glowToggle.addEventListener('click', () => {
       glowEnabled = !glowEnabled;
+      requestRender();
       bloom.setStrength(glowEnabled ? 1 : 0);
       glowToggle.textContent = glowEnabled ? 'Сияние: вкл' : 'Сияние: выкл';
     });
@@ -378,19 +389,20 @@
         cab.screenMat.uniforms.uTex.value = previewTexture;
         cab.screenMat.uniforms.uTexMix.value = 1;
       }
-      stage.dataset.preview = previewTexture ? 'image' : 'snow';
       root.add(cab.tilt);
       applyView();
       fitCamera();
     }
 
     function applyView() {
+      requestRender();
       backdrop.visible = view.studio;
       cab.antennaGroup.visible = view.antennas;
       for (const m of Object.values(mats.roles)) m.wireframe = view.wire;
     }
 
     function relight() {
+      requestRender();
       lighting.apply(spec.lights);
       lighting.refresh(palette());
     }
@@ -557,7 +569,7 @@
     let dirty = false;
     function changed(path) {
       if (path.startsWith('lights.')) { relight(); return; }
-      dirty = true;
+      dirty = true; requestRender();
     }
 
     const panel = document.getElementById('panel');
@@ -777,6 +789,7 @@
     /* ── Раскладка и цикл ───────────────────────────────────────────────── */
 
     function resize() {
+      requestRender();
       const w = stage.clientWidth;
       const h = stage.clientHeight;
       renderer.setSize(w, h);
@@ -793,12 +806,12 @@
     let frames = 0;
     let hudAt = performance.now();
 
-    const frozen = new URLSearchParams(location.search).has("aqa");
-    let frameId = 0;
+    let renderedFrames = 0;
     let clock = 0;
     let last = performance.now();
     function frame(now) {
-      frameId = requestAnimationFrame(frame);
+      frameId = 0;
+      rendering = true;
       const dt = Math.min((now - last) / 1000, 0.25);
       last = now;
       clock += dt;
@@ -811,6 +824,10 @@
       cab.screenMat.uniforms.uTime.value = frozen ? 0 : clock;
       renderer.info.reset();
       bloom.render(scene, camera);
+      stage.dataset.preview = previewTexture ? 'image' : 'snow';
+      if (frozen) stage.dataset.frames = String(++renderedFrames);
+      rendering = false;
+      if (!frozen) requestRender();
 
       frames++;
       if (now - hudAt > 500) {
@@ -839,7 +856,7 @@
     });
 
     rebuild();
-    frameId = requestAnimationFrame(frame);
+    requestRender();
   </script>
 </body>
 </html>

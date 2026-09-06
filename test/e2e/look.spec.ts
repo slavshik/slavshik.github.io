@@ -58,6 +58,16 @@ test('локальное фото переживает настройку и в�
 			style: '#panel, #hud, #toggle, #err { visibility: hidden !important; }',
 		});
 	await expect(page.locator('#stage')).toHaveAttribute('data-preview', 'snow');
+	const renderedFrames = await page.locator('#stage').getAttribute('data-frames');
+	await page.evaluate(
+		() =>
+			new Promise<void>((resolve) => {
+				requestAnimationFrame(() =>
+					requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+				);
+			}),
+	);
+	await expect(page.locator('#stage')).toHaveAttribute('data-frames', renderedFrames!);
 	const snow = await capture();
 	await page.getByLabel('Локальное фото').setInputFiles('test/e2e/fixtures/clip.png');
 	await expect(page.locator('#stage')).toHaveAttribute('data-preview', 'image', {
