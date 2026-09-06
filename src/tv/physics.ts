@@ -368,9 +368,21 @@ export interface BodyState {
 	sleepFor: number;
 }
 
+/** Упор в шарнире: дальше рожок не отклоняется, сколько его ни тряси. */
+const ANT_LIM = 0.7;
+
 export interface AntennaState {
 	a: number;
 	av: number;
+	/**
+	 * Развал рожка — тот же, что в облике, но со знаком поворота вокруг Z.
+	 *
+	 * Пружина считает от нуля, а качается рожок вокруг своего развала, и
+	 * разница видна ровно там, где она нужна: вертикальный удар наклонённому
+	 * рожку даёт момент, а строго отвесному не даёт никакого. Без этого числа
+	 * телевизор падал плашмя, а антенны не вздрагивали.
+	 */
+	splay: number;
 }
 
 /** Границы сцены и домашняя позиция — их считает раскладка. */
@@ -524,6 +536,14 @@ export function wake(state: BodyState): void {
 export function stepWorld(w: PhysicsWorld, dt: number): number {
 	const { state: S, params, env, drag, plug, antennas, rope, twist } = w;
 
+	// Скорости до шага: по ним внизу считается настоящее ускорение корпуса —
+	// то самое, которое трясёт антенны. Считать его из ax/ay нельзя, потому
+	// что пол, стены и потолок меняют скорость помимо сил, а для рожка удар —
+	// главное событие в жизни.
+	const vx0 = S.vx;
+	const vy0 = S.vy;
+	const om0 = S.om;
+
 	let ax = -params.gravity * env.tiltG;
 	let ay = params.gravity;
 
@@ -618,6 +638,44 @@ export function stepWorld(w: PhysicsWorld, dt: number): number {
 		S.vy = -Math.abs(S.vy) * 0.3;
 	}
 
+	/* Антенны догоняют корпус с запозданием — самая дешёвая деталь и самая
+	   заметная: без неё прыжок выглядит как перемещение картинки.
+
+	   Ведёт их не сила, а ускорение опоры: в системе отсчёта корпуса рожок
+	   тянет назад ровно на столько, на сколько корпус разогнали. Отсюда и
+	   деление на «до» и «после» — за шаг скорость меняют и пружины, и пол,
+	   и стены, а рожку всё равно, кто именно её изменил.
+
+	   Тяжесть в это ускорение не входит: рожок собран уже провисшим под ней,
+	   его покой — это и есть равновесие с тяжестью. Зато свободное падение
+	   отнимает её обратно, и антенны на лету подбираются вверх, а на ударе
+	   разлетаются врозь — потому что развал у них разный по знаку. */
+	const accX = (S.vx - vx0) / dt;
+	const accY = (S.vy - vy0) / dt;
+	const accW = (S.om - om0) / dt;
+	let antRinging = false;
+	for (const ant of antennas) {
+		const th = ant.a + ant.splay;
+		const push = Math.sin(th) * accY + Math.cos(th) * accX;
+		const acc =
+			-params.antK * ant.a -
+			params.antC * ant.av +
+			push * params.antLift -
+			accW * params.antLever;
+		ant.av += acc * dt;
+		ant.a += ant.av * dt;
+		// Упор колена: доехав до него, рожок останавливается, а не продолжает
+		// давить в стенку — иначе он залипает в крайнем углу до смены знака.
+		if (ant.a < -ANT_LIM) {
+			ant.a = -ANT_LIM;
+			if (ant.av < 0) ant.av = 0;
+		} else if (ant.a > ANT_LIM) {
+			ant.a = ANT_LIM;
+			if (ant.av > 0) ant.av = 0;
+		}
+		if (Math.abs(ant.a) > 0.01 || Math.abs(ant.av) > 0.05) antRinging = true;
+	}
+
 	// Сон: иначе корпус вечно микро-дрожит на полу
 	// Провод входит в условие сна наравне с корпусом: он качается заметно
 	// дольше, и заснуть, пока вилка ещё болтается, было бы видно.
@@ -630,7 +688,8 @@ export function stepWorld(w: PhysicsWorld, dt: number): number {
 		Math.abs(S.th) < 0.01 &&
 		Math.abs(S.x - env.homeX) < 0.01 &&
 		!ropeMoving(rope) &&
-		!twistMoving(twist);
+		!twistMoving(twist) &&
+		!antRinging;
 	if (still) {
 		S.sleepFor += dt;
 		if (S.sleepFor > 0.5) {
@@ -641,19 +700,11 @@ export function stepWorld(w: PhysicsWorld, dt: number): number {
 			// Кручение добиваем в ноль вместе с остальным: спящий кадр обязан
 			// быть одним и тем же, иначе вилка застынет там, где её застали.
 			twist.reset();
+			for (const ant of antennas) ant.a = ant.av = 0;
 			S.sleeping = true;
 		}
 	} else {
 		S.sleepFor = 0;
-	}
-
-	// Антенны догоняют корпус с запозданием — самая дешёвая деталь и самая
-	// заметная: без неё прыжок выглядит как перемещение картинки.
-	for (const ant of antennas) {
-		const acc = -params.antK * ant.a - params.antC * ant.av - al * params.antLever;
-		ant.av += acc * dt;
-		ant.a += ant.av * dt;
-		ant.a = clamp(ant.a, -0.7, 0.7);
 	}
 
 	const a = anchorAt(S.x, S.y, S.th);

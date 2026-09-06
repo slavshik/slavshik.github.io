@@ -43,8 +43,8 @@ function makeWorld(overrides: Partial<TvParams> = {}): PhysicsWorld {
 		drag: { active: false, tx: 0, ty: 0 },
 		plug: createPlugHold(),
 		antennas: [
-			{ a: 0, av: 0 },
-			{ a: 0, av: 0 },
+			{ a: 0, av: 0, splay: 0.37 },
+			{ a: 0, av: 0, splay: -0.33 },
 		],
 		twist: new Twist(ROPE_N),
 		rope,
@@ -215,6 +215,23 @@ describe('шаг физики', () => {
 			}
 		}
 		expect(moved).toBe(true);
+	});
+
+	it('удар о пол расшвыривает антенны врозь', () => {
+		const w = makeWorld();
+		// Падение строго вниз: ни сноса, ни крена — вращать антенны нечем,
+		// кроме самого удара. Ровно тот случай, в котором они молчали.
+		w.state.y = 3;
+
+		let apart = 0;
+		for (let i = 0; i < 400; i++) {
+			stepWorld(w, FIXED);
+			apart = Math.max(apart, w.antennas[0]!.a - w.antennas[1]!.a);
+		}
+
+		// Развал у рожков разного знака, поэтому удар разводит их в стороны:
+		// левый в плюс, правый в минус.
+		expect(apart).toBeGreaterThan(0.05);
 	});
 
 	it('наклон устройства сносит корпус в сторону', () => {

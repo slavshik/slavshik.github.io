@@ -23,6 +23,8 @@ export interface AntennaPart {
 	pivot: THREE.Group;
 	a: number;
 	av: number;
+	/** Развал со знаком поворота вокруг Z: физике он нужен как угол покоя. */
+	splay: number;
 	side: number;
 }
 
@@ -446,7 +448,9 @@ export function buildCabinet(
 
 		pivot.add(armGroup);
 		antennaGroup.add(pivot);
-		antennas.push({ pivot, a: 0, av: 0, side: arm.side });
+		// Знак тот же, что у armGroup: физика качает рожок вокруг его развала,
+		// а не вокруг отвеса, и знать про этот развал должна из одного места.
+		antennas.push({ pivot, a: 0, av: 0, splay: -arm.side * arm.splay, side: arm.side });
 	}
 
 	// Ножки — минимальные, только чтобы корпус не лежал на полу брюхом
