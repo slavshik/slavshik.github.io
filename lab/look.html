@@ -449,6 +449,8 @@
         ['окно рад.', 'shape.bezel.holeR', 0.02, 0.25],
         ['толщина', 'shape.bezel.depth', 0.01, 0.2],
         ['фаска', 'shape.bezel.bevel', 0.001, 0.05],
+        ['детализация рамки', 'shape.bezel.segments', 4, 24, 1],
+        ['выступ внутреннего края', 'shape.bezel.innerLift', -0.04, 0.06],
         ['глубина Z', 'shape.bezel.z', 0.2, 0.6],
       ]],
       ['стекло', false, [
@@ -462,6 +464,7 @@
 		['стекло шерох.', 'shape.screen.glassRoughness', 0, 0.5],
 		['стекло прозрач.', 'shape.screen.glassOpacity', 0, 0.6],
 		['стекло IOR', 'shape.screen.glassIor', 1, 2.33],
+        ['отражение стекла', 'shape.screen.glassReflectionIntensity', 0, 4],
       ]],
       ['свечение', false, [
         ['лампа Z', 'shape.glow.z', 0.3, 1],
@@ -470,6 +473,7 @@
       ]],
       ['шероховатость корпуса', false, [
         ['потёртости пластика', 'grain.wear.strength', 0, 1],
+        ['микрорельеф царапин', 'grain.wear.normalScale', 0, 0.5],
         ['число царапин', 'grain.wear.count', 0, 100, 1],
         ['длина царапин', 'grain.wear.length', 0.02, 0.3],
         ['толщина царапин', 'grain.wear.width', 0.3, 2],

@@ -278,6 +278,12 @@ test('ореол выключен: яркий экран не добавляет
 					}
 			}
 		}
+		const glass = I.parts.screenGlass.material as import('three').MeshPhysicalMaterial;
+		const reflectionStrength = glass.envMapIntensity;
+		const reflected = capture(1);
+		glass.envMapIntensity = 0;
+		const reflectionDelta = difference(reflected, capture(1));
+		glass.envMapIntensity = reflectionStrength;
 		const scissor = I.renderer.setScissorTest;
 		const unclipped: number[] = [];
 		const angle = I.parts.tilt.rotation.y;
@@ -293,10 +299,20 @@ test('ореол выключен: яркий экран не добавляет
 		const rear = difference(capture(0), capture(1));
 		u.uTex!.value = original;
 		tex.dispose();
-		return { black, whiteGlow, steps, rear, unclipped, interiorDelta, interiorPixels };
+		return {
+			black,
+			whiteGlow,
+			reflectionDelta,
+			steps,
+			rear,
+			unclipped,
+			interiorDelta,
+			interiorPixels,
+		};
 	});
 	expect(result.black).toBe(0);
 	expect(result.whiteGlow).toBe(0);
+	expect(result.reflectionDelta).toBeGreaterThan(100);
 	expect(result.interiorPixels).toBeGreaterThan(50);
 	expect(result.interiorDelta).toBeLessThanOrEqual(2);
 	expect(result.rear).toBe(0);

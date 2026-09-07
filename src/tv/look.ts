@@ -43,6 +43,10 @@ export interface ShapeSpec {
 		holeR: number;
 		depth: number;
 		bevel: number;
+		/** Forward lift of the inner rim relative to the outer border. */
+		innerLift: number;
+		/** Subdivisions across the moulded profile. */
+		segments: number;
 		z: number;
 	};
 	screen: {
@@ -57,6 +61,7 @@ export interface ShapeSpec {
 		glassRoughness: number;
 		glassOpacity: number;
 		glassIor: number;
+		glassReflectionIntensity: number;
 	};
 	/** Свет трубки внутри корпуса. */
 	glow: { z: number; dist: number; decay: number };
@@ -125,7 +130,7 @@ export interface CordSpec {
  */
 export interface GrainSpec {
 	/** Fine surface scuffs on moulded plastic. */
-	wear: { strength: number; count: number; length: number; width: number };
+	wear: { strength: number; count: number; length: number; width: number; normalScale: number };
 	/** Procedural veneer colour, beneath the smooth varnish. */
 	wood: { strength: number; light: string; dark: string; bands: number; warp: number };
 	/** Сторона плитки в текселях. */
@@ -222,6 +227,8 @@ export const LOOK: LookSpec = {
 			holeR: 0.1,
 			depth: 0.07,
 			bevel: 0.012,
+			innerLift: -0.04,
+			segments: 12,
 			z: 0.405,
 		},
 		screen: {
@@ -231,10 +238,11 @@ export const LOOK: LookSpec = {
 			power: 0.8,
 			z: 0.41,
 			glassOffset: 0.006,
-			glassColor: '#839b91',
-			glassRoughness: 0.055,
-			glassOpacity: 0.1,
+			glassColor: '#8d999b',
+			glassRoughness: 0.025,
+			glassOpacity: 0.1305,
 			glassIor: 1.52,
+			glassReflectionIntensity: 2.4,
 		},
 		glow: { z: 1, dist: 0.907, decay: 0.58 },
 		dish: { r: 0.19, squash: 0.42, z: -0.03, sink: 0.012 },
@@ -337,7 +345,7 @@ export const LOOK: LookSpec = {
 	// намёк; это осознанно, вернуть его там можно только загрубив зерно
 	// везде.
 	grain: {
-		wear: { strength: 0.55, count: 48, length: 0.12, width: 0.8 },
+		wear: { strength: 0.55, count: 48, length: 0.12, width: 0.8, normalScale: 0.14 },
 		wood: { strength: 0, light: '#936b48', dark: '#4a3120', bands: 60, warp: 2.4 },
 		size: 512,
 		cells: 56,

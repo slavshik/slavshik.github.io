@@ -14,6 +14,7 @@ import type { Palette } from './palette.js';
 import { BLOOM_LAYER } from './bloom.js';
 import { SCREEN_FRAG, SCREEN_VERT } from './shaders.js';
 import { woodHeight } from './wood.js';
+import { bezelMesh } from './bezel.js';
 
 export interface Disposable {
 	dispose(): void;
@@ -45,22 +46,6 @@ export interface Cabinet {
 	/** Вся антенная надстройка одним узлом: блюдце, винт и оба рожка. */
 	antennaGroup: THREE.Group;
 	disposables: Disposable[];
-}
-
-function roundedRect(w: number, h: number, r: number): THREE.Shape {
-	const s = new THREE.Shape();
-	const x = -w / 2;
-	const y = -h / 2;
-	s.moveTo(x + r, y);
-	s.lineTo(x + w - r, y);
-	s.quadraticCurveTo(x + w, y, x + w, y + r);
-	s.lineTo(x + w, y + h - r);
-	s.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-	s.lineTo(x + r, y + h);
-	s.quadraticCurveTo(x, y + h, x, y + h - r);
-	s.lineTo(x, y + r);
-	s.quadraticCurveTo(x, y, x + r, y);
-	return s;
 }
 
 // Корпус сужается к затылку, но заметно меньше, чем у настоящего ЭЛТ:
@@ -242,18 +227,24 @@ function woodTexture(spec: GrainSpec): { color: THREE.CanvasTexture; normal: THR
 	texture.colorSpace = THREE.SRGBColorSpace;
 	texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
 	texture.anisotropy = 16;
+	const normal = heightNormal(heights, spec.size, spec.relief);
+	return { color: texture, normal };
+}
+
+/** Derivatives of a wrapped height field; colour and normals share UVs. */
+function heightNormal(heights: Float32Array, size: number, relief: number): THREE.CanvasTexture {
 	const normalCanvas = document.createElement('canvas');
-	normalCanvas.width = normalCanvas.height = spec.size;
+	normalCanvas.width = normalCanvas.height = size;
 	const normalCtx = normalCanvas.getContext('2d')!;
-	const normalImage = normalCtx.createImageData(spec.size, spec.size);
+	const normalImage = normalCtx.createImageData(size, size);
 	const height = (x: number, y: number): number =>
-		heights[((y + spec.size) % spec.size) * spec.size + ((x + spec.size) % spec.size)]!;
-	for (let y = 0; y < spec.size; y++)
-		for (let x = 0; x < spec.size; x++) {
-			const dx = (height(x + 1, y) - height(x - 1, y)) * spec.relief;
-			const dy = (height(x, y + 1) - height(x, y - 1)) * spec.relief;
+		heights[((y + size) % size) * size + ((x + size) % size)]!;
+	for (let y = 0; y < size; y++)
+		for (let x = 0; x < size; x++) {
+			const dx = (height(x + 1, y) - height(x - 1, y)) * relief;
+			const dy = (height(x, y + 1) - height(x, y - 1)) * relief;
 			const len = Math.hypot(dx, dy, 1),
-				i = (y * spec.size + x) * 4;
+				i = (y * size + x) * 4;
 			normalImage.data[i] = 127.5 - (dx / len) * 127.5;
 			normalImage.data[i + 1] = 127.5 - (dy / len) * 127.5;
 			normalImage.data[i + 2] = 127.5 + 127.5 / len;
@@ -264,13 +255,14 @@ function woodTexture(spec: GrainSpec): { color: THREE.CanvasTexture; normal: THR
 	normal.colorSpace = THREE.NoColorSpace;
 	normal.wrapS = normal.wrapT = THREE.RepeatWrapping;
 	normal.anisotropy = 16;
-	return { color: texture, normal };
+	return normal;
 }
 
 /** Sparse repeatable scuffs, visible mainly where a highlight crosses them. */
 function plasticWear(spec: GrainSpec): {
 	color: THREE.CanvasTexture;
 	roughness: THREE.CanvasTexture;
+	normal: THREE.CanvasTexture;
 } {
 	const colorCanvas = document.createElement('canvas');
 	const roughCanvas = document.createElement('canvas');
@@ -309,9 +301,14 @@ function plasticWear(spec: GrainSpec): {
 		tex.anisotropy = 16;
 		return tex;
 	};
+	const pixels = rough.getImageData(0, 0, spec.size, spec.size).data;
+	const heights = new Float32Array(spec.size * spec.size);
+	for (let i = 0; i < heights.length; i++) heights[i] = -pixels[i * 4 + 1]! / 255;
+
 	return {
 		color: map(colorCanvas, THREE.SRGBColorSpace),
 		roughness: map(roughCanvas, THREE.NoColorSpace),
+		normal: heightNormal(heights, spec.size, spec.relief),
 	};
 }
 
@@ -386,7 +383,7 @@ export function buildCabinet(
 		shell.map = keep(wood.color);
 		shell.normalMap = keep(wood.normal);
 		shell.normalScale.setScalar(grain.scale * grain.wood.strength);
-	} else if (grain.scale > 0) {
+	} else if (grain.scale > 0 && grain.wear.strength === 0) {
 		shell.normalMap = keep(grainTexture(grain));
 		shell.normalScale.setScalar(grain.scale);
 	}
@@ -395,6 +392,13 @@ export function buildCabinet(
 		shell.map = keep(wear.color);
 		shell.roughnessMap = keep(wear.roughness);
 		shell.clearcoatRoughnessMap = wear.roughness;
+		const normal = keep(wear.normal);
+		for (const material of [shell, bezelMat, knob, mats.roles.plug]) {
+			material.normalMap = normal;
+			material.normalScale.setScalar(grain.wear.normalScale);
+			material.clearcoatNormalMap = normal;
+			material.clearcoatNormalScale.setScalar(grain.wear.normalScale);
+		}
 	}
 	tilt.add(new THREE.Mesh(shellGeo, shell));
 
@@ -404,20 +408,12 @@ export function buildCabinet(
 	// и у самых краёв плита повисла бы в воздухе перед корпусом.
 	// Высота прежняя: сверху и снизу корпус скруглён так же, и рамка повыше
 	// вылезала бы углами за силуэт.
-	const bezelShape = roundedRect(spec.bezel.w, spec.bezel.h, spec.bezel.r);
-	bezelShape.holes.push(roundedRect(spec.bezel.holeW, spec.bezel.holeH, spec.bezel.holeR));
-	const bezelGeo = keep(
-		new THREE.ExtrudeGeometry(bezelShape, {
-			depth: spec.bezel.depth,
-			bevelEnabled: true,
-			bevelSize: spec.bezel.bevel,
-			bevelThickness: spec.bezel.bevel,
-			bevelSegments: 3,
-			// Скругления рамки заданы кривыми, и их дробность — здесь: по
-			// умолчанию их двенадцать на кривую, и углы окна видны гранями.
-			curveSegments: 32,
-		}),
-	);
+	const frame = bezelMesh(spec.bezel);
+	const bezelGeo = keep(new THREE.BufferGeometry());
+	bezelGeo.setAttribute('position', new THREE.Float32BufferAttribute(frame.positions, 3));
+	bezelGeo.setAttribute('uv', new THREE.Float32BufferAttribute(frame.uvs, 2));
+	bezelGeo.setIndex(frame.indices);
+	bezelGeo.computeVertexNormals();
 	const bezel = new THREE.Mesh(bezelGeo, bezelMat);
 	// Порядок по глубине: передняя грань корпуса 0.40 → стекло от 0.41 →
 	// рамка 0.405…0.475. Стекло обязано начинаться впереди корпуса, иначе он
@@ -473,6 +469,7 @@ export function buildCabinet(
 			roughness: spec.screen.glassRoughness,
 			metalness: 0,
 			ior: spec.screen.glassIor,
+			envMapIntensity: spec.screen.glassReflectionIntensity,
 			specularIntensity: 1,
 			clearcoat: 1,
 			clearcoatRoughness: spec.screen.glassRoughness * 0.5,
@@ -483,6 +480,14 @@ export function buildCabinet(
 		}),
 	);
 	const screenGlass = new THREE.Mesh(screenGeo, glassMat);
+	// An explicit, borrowed environment lets glass use its own reflection
+	// strength; three otherwise replaces it with scene.environmentIntensity.
+	screenGlass.onBeforeRender = (_renderer, scene) => {
+		if (glassMat.envMap !== scene.environment) {
+			glassMat.envMap = scene.environment;
+			glassMat.needsUpdate = true;
+		}
+	};
 	screenGlass.position.set(0, 0, spec.screen.z + spec.screen.glassOffset);
 	screenGlass.scale.y = 0.02;
 	screenGlass.renderOrder = 1;
