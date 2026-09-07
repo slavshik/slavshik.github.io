@@ -176,13 +176,8 @@ export interface LightSpec {
 export interface ScreenEffectsSpec {
 	exposure: number;
 	saturation: number;
+	/** Цвет свечения трубки: он же у света внутри корпуса и в шейдере экрана. */
 	glowColor: string;
-	tightStrength: number;
-	broadStrength: number;
-	/** Blur radii in CSS pixels, independent of DPR. */
-	tightRadius: number;
-	broadRadius: number;
-	interiorSuppression: number;
 	glassEdgeIntensity: number;
 	lightSpillIntensity: number;
 }
@@ -201,11 +196,6 @@ export const LOOK: LookSpec = {
 		exposure: 1.08,
 		saturation: 1.06,
 		glowColor: '#79bfff',
-		tightStrength: 0,
-		broadStrength: 0,
-		tightRadius: 2,
-		broadRadius: 8,
-		interiorSuppression: 1,
 		glassEdgeIntensity: 0.65,
 		lightSpillIntensity: 0.22,
 	},

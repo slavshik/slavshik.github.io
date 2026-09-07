@@ -35,7 +35,6 @@ import {
 } from './constants.js';
 import { createInput } from './input.js';
 import { createLayout } from './layout.js';
-import { createBloom, type Bloom } from './bloom.js';
 import { createLighting } from './lighting.js';
 import { LOOK } from './look.js';
 import { readPalette, type Palette } from './palette.js';
@@ -83,7 +82,8 @@ export interface TvInternals {
 	/** Стенду — чтобы дёрнуть за вилку без мыши. */
 	plugHold: PlugHold;
 	renderer: THREE.WebGLRenderer;
-	bloom: Bloom;
+	/** Нарисовать кадр по текущему состоянию — стенду и скриншотным тестам. */
+	render: () => void;
 	scene: THREE.Scene;
 	camera: THREE.PerspectiveCamera;
 	rig: THREE.Group;
@@ -132,12 +132,6 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 	camera.position.set(0, 0, CAM_DIST);
 
 	const lighting = createLighting(scene, renderer, pal, LOOK.lights);
-
-	/* Сияние трубки — пост-обработкой, а не мешем перед экраном. Форма его
-	   берётся из уже нарисованного кадра, поэтому оно само следует за
-	   картинкой: тёмный кадр почти не светит, снег светит ровно. Мигает им
-	   uFlicker — розжиг, вспышка от удара, срыв кадра. */
-	const bloom = createBloom(renderer, LOOK.screenEffects);
 
 	const rig = new THREE.Group();
 	scene.add(rig);
@@ -357,9 +351,6 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 		u.uTexMix!.value = texMix;
 		u.uIntensity!.value = ease + flashV;
 		tv.glow.intensity = (1 + flashV * 5) * LOOK.screenEffects.lightSpillIntensity * ease;
-		// Яркость сияния: розжиг, передача чуть ярче снега, удар вспыхивает.
-		// Форма сюда не приходит — её даёт сам кадр.
-		bloom.setFlicker((0.55 + 0.45 * texMix + flashV * 1.7) * ease);
 	}
 
 	/* ── Ввод ───────────────────────────────────────────────────────────── */
@@ -432,10 +423,9 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 		params,
 		state: S,
 		env,
-		onResize: (w, h, dpr) => bloom.setSize(w, h, dpr),
 		onResized: () => {
 			syncMeshes(1);
-			bloom.render(scene, camera);
+			renderer.render(scene, camera);
 		},
 		onApplied: wake,
 	});
@@ -556,7 +546,7 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 
 		syncMeshes(S.sleeping ? 1 : acc / FIXED);
 		updateScreen(dtReal, clock);
-		bloom.render(scene, camera);
+		renderer.render(scene, camera);
 	}
 
 	function start(): void {
@@ -668,7 +658,7 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 		power = 1;
 		syncMeshes(1);
 		updateScreen(0, FROZEN_T);
-		bloom.render(scene, camera);
+		renderer.render(scene, camera);
 	} else {
 		start();
 	}
@@ -689,7 +679,6 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 		renderer.domElement.removeEventListener('webglcontextlost', onContextLost);
 		for (const d of tv.disposables) d.dispose();
 		lighting.dispose();
-		bloom.dispose();
 		tv.ropeGeo.dispose();
 		shadow.geometry.dispose();
 		shadowMat.dispose();
@@ -708,7 +697,7 @@ export function mount(el: HTMLElement, opts: MountOptions = {}): TvInstance {
 		scene,
 		camera,
 		rig,
-		bloom,
+		render: () => renderer.render(scene, camera),
 		parts: tv,
 		wake,
 		flash,

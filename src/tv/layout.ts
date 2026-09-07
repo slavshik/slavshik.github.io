@@ -19,8 +19,6 @@ export interface LayoutDeps {
 	state: BodyState;
 	/** Границы сцены, которые раскладка обязана держать в актуальном виде. */
 	env: PhysicsEnv;
-	/** Размер канваса поменялся: буферы пост-обработки идут следом. */
-	onResize: (w: number, h: number, dpr: number) => void;
 	/** Буфер пересоздан — надо синхронно нарисовать кадр по свежему состоянию. */
 	onResized: () => void;
 	/** Раскладка всегда будит физику: границы поехали, спать на старых нельзя. */
@@ -52,7 +50,6 @@ export function createLayout(deps: LayoutDeps): Layout {
 			renderer.setSize(w, h, false);
 			camera.aspect = w / h;
 			camera.updateProjectionMatrix();
-			deps.onResize(w, h, dpr);
 			lastW = w;
 			lastH = h;
 			lastDpr = dpr;

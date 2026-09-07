@@ -182,7 +182,6 @@
     import { CAM_DIST, FOV } from '/src/tv/constants.ts';
     import { LOOK } from '/src/tv/look.ts';
     import { buildCabinet, buildMaterials } from '/src/tv/cabinet.ts';
-    import { createBloom } from '/src/tv/bloom.ts';
     import { createLighting } from '/src/tv/lighting.ts';
     import { readPalette } from '/src/tv/palette.ts';
 
@@ -192,7 +191,7 @@
 
     /* ── Спека: живая копия, «сбросить» возвращает к LOOK ─────────────── */
 
-    // В Frozen mode рисуем только изменения: непрерывный bloom забивает
+    // В Frozen mode рисуем только изменения: непрерывный цикл забивает
     // программный GPU на CI и мешает даже кликам и снимкам Playwright.
     const frozen = new URLSearchParams(location.search).has('aqa');
     let frameId = 0;
@@ -302,8 +301,6 @@
 
     const pal0 = palette();
     const lighting = createLighting(scene, renderer, pal0, spec.lights);
-    const bloom = createBloom(renderer, spec.screenEffects);
-    bloom.setFlicker(1);
     renderer.info.autoReset = false;
     let previewTexture = null;
     let previewRequest = 0;
@@ -337,16 +334,6 @@
       previewRequest++; previewTexture?.dispose(); previewTexture = null; preview.value = ''; dirty = true; requestRender();
     });
     preview.after(snow);
-    const glowToggle = document.createElement('button');
-    let glowEnabled = true;
-    glowToggle.textContent = 'Сияние: вкл';
-    glowToggle.addEventListener('click', () => {
-      glowEnabled = !glowEnabled;
-      requestRender();
-      bloom.setStrength(glowEnabled ? 1 : 0);
-      glowToggle.textContent = glowEnabled ? 'Сияние: вкл' : 'Сияние: выкл';
-    });
-    snow.after(glowToggle);
 
     /* Настоящих теней здесь нет, и это не упущение: тюнить ими нечего. На
        странице телевизор висит над текстом, пола под ним не бывает, и
@@ -384,7 +371,6 @@
       cab.screenGlass.scale.y = 1;
       cab.screenMat.uniforms.uIntensity.value = 1;
       cab.glow.intensity = spec.screenEffects.lightSpillIntensity;
-      bloom.apply(spec.screenEffects);
       if (previewTexture) {
         cab.screenMat.uniforms.uTex.value = previewTexture;
         cab.screenMat.uniforms.uTexMix.value = 1;
@@ -432,11 +418,6 @@
         ['экспозиция фото', 'screenEffects.exposure', 1, 1.3],
         ['насыщенность', 'screenEffects.saturation', 0.8, 1.2],
         ['#', 'цвет сияния', 'screenEffects.glowColor'],
-        ['ближнее сияние', 'screenEffects.tightStrength', 0, 1],
-        ['дальний ореол', 'screenEffects.broadStrength', 0, 1],
-        ['ближний радиус', 'screenEffects.tightRadius', 0.5, 8],
-        ['дальний радиус', 'screenEffects.broadRadius', 2, 20],
-        ['защита картинки', 'screenEffects.interiorSuppression', 0, 1],
         ['край стекла', 'screenEffects.glassEdgeIntensity', 0, 1],
         ['свет на рамке', 'screenEffects.lightSpillIntensity', 0, 1],
       ]],
@@ -744,7 +725,7 @@
       });
 
       mkBtn('снимок', () => {
-        bloom.render(scene, camera);
+        renderer.render(scene, camera);
         renderer.domElement.toBlob((blob) => {
           if (blob) download(blob, 'tv-look.png');
         });
@@ -801,7 +782,6 @@
       const w = stage.clientWidth;
       const h = stage.clientHeight;
       renderer.setSize(w, h);
-      bloom.setSize(w, h, renderer.getPixelRatio());
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       fitCamera();
@@ -831,7 +811,7 @@
 
       cab.screenMat.uniforms.uTime.value = frozen ? 0 : clock;
       renderer.info.reset();
-      bloom.render(scene, camera);
+      renderer.render(scene, camera);
       stage.dataset.preview = previewTexture ? 'image' : 'snow';
       if (frozen) stage.dataset.frames = String(++renderedFrames);
       rendering = false;
@@ -854,7 +834,6 @@
       resizeObserver.disconnect();
       previewRequest++;
       previewTexture?.dispose();
-      bloom.dispose();
       lighting.dispose();
       for (const d of cab.disposables) d.dispose();
       for (const d of mats.disposables) d.dispose();
