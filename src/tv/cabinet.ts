@@ -207,6 +207,48 @@ export function grainTexture(spec: GrainSpec): THREE.CanvasTexture {
 	return tex;
 }
 
+/** Seamless, deterministic veneer: long fibres beneath a smooth clear coat. */
+function woodTexture(spec: GrainSpec): THREE.CanvasTexture {
+	const canvas = document.createElement('canvas');
+	canvas.width = canvas.height = spec.size;
+	const ctx = canvas.getContext('2d')!;
+	const img = ctx.createImageData(spec.size, spec.size);
+	const light = new THREE.Color(spec.wood.light).convertLinearToSRGB();
+	const dark = new THREE.Color(spec.wood.dark).convertLinearToSRGB();
+	const tau = Math.PI * 2;
+	for (let y = 0; y < spec.size; y++) {
+		for (let x = 0; x < spec.size; x++) {
+			const u = x / spec.size,
+				v = y / spec.size;
+			const bend = spec.wood.warp * (Math.sin(tau * u) + 0.3 * Math.sin(tau * (2 * u + v)));
+			const phase =
+				tau * (v * Math.round(spec.wood.bands)) +
+				bend +
+				1.2 * Math.sin(tau * v * 3 + 0.7 * Math.sin(tau * u));
+			const fibre = Math.pow(0.5 + 0.5 * Math.sin(phase + 0.4 * Math.sin(phase * 2)), 18);
+			const fine = Math.pow(0.5 + 0.5 * Math.sin(phase * 7 + Math.sin(tau * u * 3)), 12);
+			const t = 0.16 + 0.55 * fibre + 0.12 * fine;
+			const i = (y * spec.size + x) * 4;
+			img.data[i] =
+				255 *
+				(1 - spec.wood.strength + spec.wood.strength * (light.r + (dark.r - light.r) * t));
+			img.data[i + 1] =
+				255 *
+				(1 - spec.wood.strength + spec.wood.strength * (light.g + (dark.g - light.g) * t));
+			img.data[i + 2] =
+				255 *
+				(1 - spec.wood.strength + spec.wood.strength * (light.b + (dark.b - light.b) * t));
+			img.data[i + 3] = 255;
+		}
+	}
+	ctx.putImageData(img, 0, 0);
+	const texture = new THREE.CanvasTexture(canvas);
+	texture.colorSpace = THREE.SRGBColorSpace;
+	texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+	texture.anisotropy = 16;
+	return texture;
+}
+
 export function buildMaterials(pal: Palette, spec: Record<BodyRole, MaterialSpec>): Materials {
 	const disposables: Disposable[] = [];
 	const roles = {} as Record<BodyRole, THREE.MeshPhysicalMaterial>;
@@ -273,6 +315,7 @@ export function buildCabinet(
 
 	   Касательные под карту нормалей three считает производными в шейдере,
 	   поэтому атрибут tangent геометрии не нужен. */
+	if (grain.wood.strength > 0) shell.map = keep(woodTexture(grain));
 	if (grain.scale > 0) {
 		shell.normalMap = keep(grainTexture(grain));
 		shell.normalScale.setScalar(grain.scale);

@@ -122,6 +122,8 @@ export interface CordSpec {
  * выходит мутной. Резкие складки там, где точки равноудалены, и дают зерно.
  */
 export interface GrainSpec {
+	/** Procedural veneer colour, beneath the smooth varnish. */
+	wood: { strength: number; light: string; dark: string; bands: number; warp: number };
 	/** Сторона плитки в текселях. */
 	size: number;
 	/**
@@ -253,25 +255,25 @@ export const LOOK: LookSpec = {
 	},
 	lights: {
 		hemi: { ground: '#000000', day: 2.5, night: 3.1375 },
-		key: { color: '#fefb41', day: 2.875, night: 0.925, pos: [-4, 0.42, 0.76] },
+		key: { color: '#fff1df', day: 3, night: 1.8, pos: [-4, 0.42, 0.76] },
 		fill: { intensity: 1.13, pos: [0.94, -0.28, 1.1] },
-		rim: { color: '#fffbb9', intensity: 0.48, pos: [0.7, 1.6, -2.4] },
-		env: { intensity: 0.3675, top: '#fff994', bottom: '#000000' },
+		rim: { color: '#fff1db', intensity: 0.48, pos: [0.7, 1.6, -2.4] },
+		env: { intensity: 0.6, top: '#f3f6ff', bottom: '#29231e' },
 		exposure: 1.075,
-		toneMapping: 'agx',
+		toneMapping: 'neutral',
 	},
 	// Цвета материалов одинаковы в обеих темах: меняется свет, не пигмент.
 	materials: {
 		shell: {
-			color: '#b9472e',
-			roughness: 0.3,
+			color: '#ffffff',
+			roughness: 0.32,
 			metalness: 0,
-			clearcoat: 0.22,
+			clearcoat: 0.42,
 			clearcoatRoughness: 0.2,
 			specularIntensity: 1,
-		}, // крашеный корпус с тонким слоем лака
+		}, // деревянный шпон под гладким лаком
 		bezel: {
-			color: '#d9cfb6',
+			color: '#e8dbc0',
 			roughness: 0.32,
 			metalness: 0,
 			clearcoat: 0,
@@ -287,8 +289,8 @@ export const LOOK: LookSpec = {
 			specularIntensity: 1,
 		}, // почти чёрный пластик
 		steel: {
-			color: '#e1e3e5',
-			roughness: 0.17,
+			color: '#ffffff',
+			roughness: 0.06,
 			metalness: 1,
 			clearcoat: 0,
 			clearcoatRoughness: 0,
@@ -315,14 +317,14 @@ export const LOOK: LookSpec = {
 		}, // тканевая оплётка
 		plug: {
 			color: '#e7dfc6',
-			roughness: 0.52,
+			roughness: 0.2,
 			metalness: 0,
-			clearcoat: 0.14,
-			clearcoatRoughness: 0.58,
-			specularIntensity: 0.52,
+			clearcoat: 0.65,
+			clearcoatRoughness: 0.16,
+			specularIntensity: 0.9,
 		}, // кремовый карболит
 	},
-	// Шероховатость крашеного бакелита: мелкая, почти на пределе видимости.
+	// Микрорельеф под лаком: мелкий, почти на пределе видимости.
 	// Её задача — сбить пластиковую гладкость бликов, а не превратить корпус
 	// в апельсиновую корку.
 	//
@@ -331,11 +333,12 @@ export const LOOK: LookSpec = {
 	// намёк; это осознанно, вернуть его там можно только загрубив зерно
 	// везде.
 	grain: {
+		wood: { strength: 1, light: '#b1845d', dark: '#815638', bands: 22, warp: 1.8 },
 		size: 512,
 		cells: 56,
 		relief: 1.2,
 		repeat: 2,
-		scale: 0.2,
+		scale: 0.024,
 	},
 	// Оплётка: чёрная нить в жёлтую крапину, как у довоенного шнура.
 	//
