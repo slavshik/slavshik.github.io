@@ -13,6 +13,7 @@ import type { BodyRole, GrainSpec, MaterialSpec, ScreenEffectsSpec, ShapeSpec } 
 import type { Palette } from './palette.js';
 import { BLOOM_LAYER } from './bloom.js';
 import { SCREEN_FRAG, SCREEN_VERT } from './shaders.js';
+import { woodHeight } from './wood.js';
 
 export interface Disposable {
 	dispose(): void;
@@ -208,26 +209,21 @@ export function grainTexture(spec: GrainSpec): THREE.CanvasTexture {
 }
 
 /** Seamless, deterministic veneer: long fibres beneath a smooth clear coat. */
-function woodTexture(spec: GrainSpec): THREE.CanvasTexture {
+function woodTexture(spec: GrainSpec): { color: THREE.CanvasTexture; normal: THREE.CanvasTexture } {
 	const canvas = document.createElement('canvas');
 	canvas.width = canvas.height = spec.size;
 	const ctx = canvas.getContext('2d')!;
 	const img = ctx.createImageData(spec.size, spec.size);
 	const light = new THREE.Color(spec.wood.light).convertLinearToSRGB();
 	const dark = new THREE.Color(spec.wood.dark).convertLinearToSRGB();
-	const tau = Math.PI * 2;
+	const heights = new Float32Array(spec.size * spec.size);
 	for (let y = 0; y < spec.size; y++) {
 		for (let x = 0; x < spec.size; x++) {
 			const u = x / spec.size,
 				v = y / spec.size;
-			const bend = spec.wood.warp * (Math.sin(tau * u) + 0.3 * Math.sin(tau * (2 * u + v)));
-			const phase =
-				tau * (v * Math.round(spec.wood.bands)) +
-				bend +
-				1.2 * Math.sin(tau * v * 3 + 0.7 * Math.sin(tau * u));
-			const fibre = Math.pow(0.5 + 0.5 * Math.sin(phase + 0.4 * Math.sin(phase * 2)), 18);
-			const fine = Math.pow(0.5 + 0.5 * Math.sin(phase * 7 + Math.sin(tau * u * 3)), 12);
-			const t = 0.16 + 0.55 * fibre + 0.12 * fine;
+			const h = woodHeight(u, v, spec.wood);
+			heights[y * spec.size + x] = h;
+			const t = 0.12 + h * 0.8;
 			const i = (y * spec.size + x) * 4;
 			img.data[i] =
 				255 *
@@ -246,7 +242,29 @@ function woodTexture(spec: GrainSpec): THREE.CanvasTexture {
 	texture.colorSpace = THREE.SRGBColorSpace;
 	texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
 	texture.anisotropy = 16;
-	return texture;
+	const normalCanvas = document.createElement('canvas');
+	normalCanvas.width = normalCanvas.height = spec.size;
+	const normalCtx = normalCanvas.getContext('2d')!;
+	const normalImage = normalCtx.createImageData(spec.size, spec.size);
+	const height = (x: number, y: number): number =>
+		heights[((y + spec.size) % spec.size) * spec.size + ((x + spec.size) % spec.size)]!;
+	for (let y = 0; y < spec.size; y++)
+		for (let x = 0; x < spec.size; x++) {
+			const dx = (height(x + 1, y) - height(x - 1, y)) * spec.relief;
+			const dy = (height(x, y + 1) - height(x, y - 1)) * spec.relief;
+			const len = Math.hypot(dx, dy, 1),
+				i = (y * spec.size + x) * 4;
+			normalImage.data[i] = 127.5 - (dx / len) * 127.5;
+			normalImage.data[i + 1] = 127.5 - (dy / len) * 127.5;
+			normalImage.data[i + 2] = 127.5 + 127.5 / len;
+			normalImage.data[i + 3] = 255;
+		}
+	normalCtx.putImageData(normalImage, 0, 0);
+	const normal = new THREE.CanvasTexture(normalCanvas);
+	normal.colorSpace = THREE.NoColorSpace;
+	normal.wrapS = normal.wrapT = THREE.RepeatWrapping;
+	normal.anisotropy = 16;
+	return { color: texture, normal };
 }
 
 export function buildMaterials(pal: Palette, spec: Record<BodyRole, MaterialSpec>): Materials {
@@ -315,8 +333,12 @@ export function buildCabinet(
 
 	   Касательные под карту нормалей three считает производными в шейдере,
 	   поэтому атрибут tangent геометрии не нужен. */
-	if (grain.wood.strength > 0) shell.map = keep(woodTexture(grain));
-	if (grain.scale > 0) {
+	if (grain.wood.strength > 0) {
+		const wood = woodTexture(grain);
+		shell.map = keep(wood.color);
+		shell.normalMap = keep(wood.normal);
+		shell.normalScale.setScalar(grain.scale * grain.wood.strength);
+	} else if (grain.scale > 0) {
 		shell.normalMap = keep(grainTexture(grain));
 		shell.normalScale.setScalar(grain.scale);
 	}
