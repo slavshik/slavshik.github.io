@@ -214,7 +214,6 @@ export function braidTexture(spec: CordSpec): THREE.CanvasTexture {
 }
 
 /** Точка на ребре from→to, отступив от from на r (но не дальше середины). */
-/** Точка на ребре from→to, отступив от from на r (но не дальше середины). */
 function alongEdge(from: [number, number], to: [number, number], r: number): [number, number] {
 	const dx = to[0] - from[0];
 	const dy = to[1] - from[1];

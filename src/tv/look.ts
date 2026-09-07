@@ -118,11 +118,9 @@ export interface CordSpec {
  * скачанная карта на пару сотен килобайт снесла бы бюджет чанка ради того,
  * что считается полусотней строк.
  *
- * Для шпона цвет и нормали строятся из одного поля вытянутых волокон
- * (wood.ts); лак остаётся гладким. Когда дерево выключено, используется
- * поле высот из клеточного шума (Вороного) двух масштабов
- * плюс попиксельный шум, затем нормали конечными разностями по нему. Решётка
- * замкнута по модулю, поэтому плитка сходится сама с собой без шва.
+ * Поле высот — клеточный шум (Вороного) двух масштабов плюс попиксельный
+ * шум, затем нормали конечными разностями по нему. Решётка замкнута по
+ * модулю, поэтому плитка сходится сама с собой без шва.
  *
  * Клеточный, а не сглаженный значения-шум: у второго нет граней, нормаль по
  * нему меняется плавно, и блик не дробится, а размазывается — поверхность
@@ -131,8 +129,6 @@ export interface CordSpec {
 export interface GrainSpec {
 	/** Fine surface scuffs on moulded plastic. */
 	wear: { strength: number; count: number; length: number; width: number; normalScale: number };
-	/** Procedural veneer colour, beneath the smooth varnish. */
-	wood: { strength: number; light: string; dark: string; bands: number; warp: number };
 	/** Сторона плитки в текселях. */
 	size: number;
 	/**
@@ -346,7 +342,6 @@ export const LOOK: LookSpec = {
 	// везде.
 	grain: {
 		wear: { strength: 0.55, count: 48, length: 0.12, width: 0.8, normalScale: 0.14 },
-		wood: { strength: 0, light: '#936b48', dark: '#4a3120', bands: 60, warp: 2.4 },
 		size: 512,
 		cells: 56,
 		relief: 1.2,

@@ -13,7 +13,6 @@ import type { BodyRole, GrainSpec, MaterialSpec, ScreenEffectsSpec, ShapeSpec } 
 import type { Palette } from './palette.js';
 import { BLOOM_LAYER } from './bloom.js';
 import { SCREEN_FRAG, SCREEN_VERT } from './shaders.js';
-import { woodHeight } from './wood.js';
 import { bezelMesh } from './bezel.js';
 
 export interface Disposable {
@@ -193,44 +192,6 @@ export function grainTexture(spec: GrainSpec): THREE.CanvasTexture {
 	return tex;
 }
 
-/** Seamless, deterministic veneer: long fibres beneath a smooth clear coat. */
-function woodTexture(spec: GrainSpec): { color: THREE.CanvasTexture; normal: THREE.CanvasTexture } {
-	const canvas = document.createElement('canvas');
-	canvas.width = canvas.height = spec.size;
-	const ctx = canvas.getContext('2d')!;
-	const img = ctx.createImageData(spec.size, spec.size);
-	const light = new THREE.Color(spec.wood.light).convertLinearToSRGB();
-	const dark = new THREE.Color(spec.wood.dark).convertLinearToSRGB();
-	const heights = new Float32Array(spec.size * spec.size);
-	for (let y = 0; y < spec.size; y++) {
-		for (let x = 0; x < spec.size; x++) {
-			const u = x / spec.size,
-				v = y / spec.size;
-			const h = woodHeight(u, v, spec.wood);
-			heights[y * spec.size + x] = h;
-			const t = 0.12 + h * 0.8;
-			const i = (y * spec.size + x) * 4;
-			img.data[i] =
-				255 *
-				(1 - spec.wood.strength + spec.wood.strength * (light.r + (dark.r - light.r) * t));
-			img.data[i + 1] =
-				255 *
-				(1 - spec.wood.strength + spec.wood.strength * (light.g + (dark.g - light.g) * t));
-			img.data[i + 2] =
-				255 *
-				(1 - spec.wood.strength + spec.wood.strength * (light.b + (dark.b - light.b) * t));
-			img.data[i + 3] = 255;
-		}
-	}
-	ctx.putImageData(img, 0, 0);
-	const texture = new THREE.CanvasTexture(canvas);
-	texture.colorSpace = THREE.SRGBColorSpace;
-	texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-	texture.anisotropy = 16;
-	const normal = heightNormal(heights, spec.size, spec.relief);
-	return { color: texture, normal };
-}
-
 /** Derivatives of a wrapped height field; colour and normals share UVs. */
 function heightNormal(heights: Float32Array, size: number, relief: number): THREE.CanvasTexture {
 	const normalCanvas = document.createElement('canvas');
@@ -378,16 +339,11 @@ export function buildCabinet(
 
 	   Касательные под карту нормалей three считает производными в шейдере,
 	   поэтому атрибут tangent геометрии не нужен. */
-	if (grain.wood.strength > 0) {
-		const wood = woodTexture(grain);
-		shell.map = keep(wood.color);
-		shell.normalMap = keep(wood.normal);
-		shell.normalScale.setScalar(grain.scale * grain.wood.strength);
-	} else if (grain.scale > 0 && grain.wear.strength === 0) {
+	if (grain.scale > 0 && grain.wear.strength === 0) {
 		shell.normalMap = keep(grainTexture(grain));
 		shell.normalScale.setScalar(grain.scale);
 	}
-	if (grain.wood.strength === 0 && grain.wear.strength > 0) {
+	if (grain.wear.strength > 0) {
 		const wear = plasticWear(grain);
 		shell.map = keep(wear.color);
 		shell.roughnessMap = keep(wear.roughness);
