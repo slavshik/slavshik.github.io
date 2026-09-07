@@ -173,6 +173,21 @@ import type { TvWhy } from './analytics.js';
 	const clipShot = aqa && q.get('clip') === '1';
 
 	if (wanted && stage) {
+		/* Скачивание начинается сразу, а монтирование — в простой.
+		   Это разные вещи, и раньше они были склеены: кусок весом в полторы
+		   сотни килобайт после сжатия не запрашивался, пока не случится load,
+		   а потом ещё и простой, — то есть загрузка стартовала последней, хотя
+		   на странице к тому моменту не осталось ни одного конкурента за
+		   канал. Тяжело здесь монтирование, а не байты: оно строит сцену,
+		   компилирует шейдеры и рисует, и вот его-то и надо уступать первой
+		   отрисовке.
+
+		   catch пустой не по небрежности: настоящий разбор неудачи ниже, в
+		   общей цепочке, а здесь нужно только, чтобы отказ не считался
+		   необработанным в те миллисекунды, пока цепочки ещё нет. */
+		const chunk = import('./tv/index.js');
+		chunk.catch(() => {});
+
 		const boot = (): void => {
 			const still = clipShot
 				? new Promise<HTMLImageElement | null>((res) => {
@@ -182,7 +197,7 @@ import type { TvWhy } from './analytics.js';
 						img.src = '/aqa-clip.png';
 					})
 				: Promise.resolve(null);
-			Promise.all([import('./tv/index.js'), still])
+			Promise.all([chunk, still])
 				.then(([m, stillClip]) => {
 					m.mount(stage, { frozen: aqa, broadcastUrl, stillClip });
 					// Класс — только после удачного монтирования: подложка под именем
