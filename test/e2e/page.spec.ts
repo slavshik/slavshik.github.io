@@ -20,13 +20,31 @@ async function settle(page: Page): Promise<void> {
 
 test.describe('страница', () => {
 	test('при prefers-reduced-motion телевизора нет вовсе', async ({ page }) => {
+		// Статичная картинка телевизора была бы хуже, чем его отсутствие,
+		// поэтому модуль даже не скачивается — и вот это как раз проверяется,
+		// а не подразумевается: канваса нет и в том случае, когда кусок
+		// приехал и упал на монтировании.
+		const fetched: string[] = [];
+		page.on('request', (r) => {
+			if (/\/assets\/tv-.*\.js$/.test(new URL(r.url()).pathname)) fetched.push(r.url());
+		});
+
 		await page.emulateMedia({ reducedMotion: 'reduce' });
 		await page.goto('/?aqa=1');
 		await settle(page);
-		await page.waitForTimeout(1500); // дольше, чем бутстрап
+		// Не сон по часам, а та же очередь, в которую встаёт бутстрап: он
+		// заказывает простой на событии load, и колбэки простоя идут по
+		// порядку. Дождались своего — значит, чужой уже сработал бы.
+		await page.evaluate(
+			() =>
+				new Promise<void>((done) => {
+					(window.requestIdleCallback ?? ((f: () => void) => setTimeout(f, 300)))(() => {
+						done();
+					});
+				}),
+		);
 
-		// Статичная картинка телевизора была бы хуже, чем его отсутствие,
-		// поэтому модуль даже не скачивается.
+		expect(fetched).toEqual([]);
 		await expect(page.locator('#tv-stage canvas')).toHaveCount(0);
 		await expect(page.locator('html')).not.toHaveClass(/tv-on/);
 	});
@@ -98,7 +116,9 @@ test.describe('телевизор', () => {
 	});
 });
 
-test.describe('снимки', () => {
+// Тег @shot отбирает эти тесты в три оконных проекта; всё остальное
+// прогоняется один раз — см. playwright.config.ts.
+test.describe('снимки', { tag: '@shot' }, () => {
 	// Эталон снят ещё до того, как телевизор включили всем, и остаётся верным:
 	// при prefers-reduced-motion страница выглядит ровно так же, как выглядела
 	// без ключа ?tv=1.

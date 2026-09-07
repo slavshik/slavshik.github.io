@@ -192,7 +192,23 @@ test('экран декодирует видео как sRGB и сохраняе
 	expect(result.frozenDifference).toBe(0);
 });
 
-test('ореол выключен: яркий экран не добавляет размытия и сохраняет полутона', async ({ page }) => {
+/*
+ * Что осталось от прежней проверки ореола.
+ *
+ * Она мерила, что размытие не съедает полутона внутри картинки, не светит
+ * из-за краёв экрана и не рисуется, когда трубка отвёрнута от камеры. Всё
+ * это стоило пяти с лишним секунд в каждом окне — и всё это перестало
+ * что-либо проверять в тот день, когда ореол выключили в спеке: при нулевой
+ * силе bloom.render() рисует сцену напрямую и до композита не доходит,
+ * поэтому нули в замерах были свойством ветки, а не картинки. Вернётся
+ * ореол — вернутся и замеры, они в истории.
+ *
+ * Осталось то, что живёт независимо от ореола и больше нигде не проверяется:
+ * шкала яркости через шейдер экрана (эталоны ловят одну точку на ней, а не
+ * монотонность) и отражение среды в стекле — единственное, что отличает
+ * стекло от куска пластика, и единственный потребитель карты среды.
+ */
+test('экран светлеет ступенями, а стекло отражает среду', async ({ page }) => {
 	await page.goto('/lab/tv.html');
 	await page.waitForSelector('#tv-stage canvas');
 	const result = await page.evaluate(() => {
@@ -215,8 +231,7 @@ test('ореол выключен: яркий экран не добавляет
 		I.parts.screenGlass.scale.y = 1;
 		I.bloom.setFlicker(1);
 		const gl = I.renderer.getContext();
-		const capture = (strength: number): Uint8Array => {
-			I.bloom.setStrength(strength);
+		const capture = (): Uint8Array => {
 			I.bloom.render(I.scene, I.camera);
 			const data = new Uint8Array(gl.drawingBufferWidth * gl.drawingBufferHeight * 4);
 			gl.readPixels(
@@ -235,88 +250,31 @@ test('ореол выключен: яркий экран не добавляет
 			for (let i = 0; i < a.length; i++) sum += Math.abs(a[i]! - b[i]!);
 			return sum;
 		};
-		tex.needsUpdate = true;
-		const black = difference(capture(0), capture(1));
+
+		// Ступени яркости: серое поле от чёрного к белому обязано светлеть
+		// монотонно. Ровно здесь жил муар развёртки, которого на снегу не видно.
 		const steps: number[] = [];
-		let whiteGlow = 0;
-		let interiorDelta = 0,
-			interiorPixels = 0;
 		for (const value of [0, 32, 96, 160, 208, 232, 248, 255]) {
 			pixels.fill(value, 0, 3);
 			tex.needsUpdate = true;
-			const data = capture(1);
+			const data = capture();
 			let sum = 0;
 			for (let i = 0; i < data.length; i += 4) sum += data[i]! + data[i + 1]! + data[i + 2]!;
 			steps.push(sum);
-			if (value === 255) {
-				const off = capture(0);
-				whiteGlow = difference(data, off);
-				const w = gl.drawingBufferWidth,
-					h = gl.drawingBufferHeight;
-				const bright = (x: number, y: number): boolean => {
-					const i = (y * w + x) * 4;
-					return off[i]! > 210 && off[i + 1]! > 210 && off[i + 2]! > 210;
-				};
-				// Only picture pixels at least ten pixels from its bright boundary.
-				for (let y = 10; y < h - 10; y++)
-					for (let x = 10; x < w - 10; x++) {
-						if (
-							!bright(x, y) ||
-							!bright(x - 10, y - 10) ||
-							!bright(x + 10, y - 10) ||
-							!bright(x - 10, y + 10) ||
-							!bright(x + 10, y + 10)
-						)
-							continue;
-						interiorPixels++;
-						const i = (y * w + x) * 4;
-						for (let c = 0; c < 3; c++)
-							interiorDelta = Math.max(
-								interiorDelta,
-								Math.abs(data[i + c]! - off[i + c]!),
-							);
-					}
-			}
 		}
+
 		const glass = I.parts.screenGlass.material as import('three').MeshPhysicalMaterial;
 		const reflectionStrength = glass.envMapIntensity;
-		const reflected = capture(1);
+		const reflected = capture();
 		glass.envMapIntensity = 0;
-		const reflectionDelta = difference(reflected, capture(1));
+		const reflectionDelta = difference(reflected, capture());
 		glass.envMapIntensity = reflectionStrength;
-		const scissor = I.renderer.setScissorTest;
-		const unclipped: number[] = [];
-		const angle = I.parts.tilt.rotation.y;
-		for (const yaw of [angle, 0.8, -1.3]) {
-			I.parts.tilt.rotation.y = yaw;
-			const bounded = capture(1);
-			I.renderer.setScissorTest = () => {};
-			const full = capture(1);
-			I.renderer.setScissorTest = scissor;
-			unclipped.push(difference(bounded, full));
-		}
-		I.parts.tilt.rotation.y = angle + Math.PI;
-		const rear = difference(capture(0), capture(1));
+
 		u.uTex!.value = original;
 		tex.dispose();
-		return {
-			black,
-			whiteGlow,
-			reflectionDelta,
-			steps,
-			rear,
-			unclipped,
-			interiorDelta,
-			interiorPixels,
-		};
+		return { steps, reflectionDelta };
 	});
-	expect(result.black).toBe(0);
-	expect(result.whiteGlow).toBe(0);
 	expect(result.reflectionDelta).toBeGreaterThan(100);
-	expect(result.interiorPixels).toBeGreaterThan(50);
-	expect(result.interiorDelta).toBeLessThanOrEqual(2);
-	expect(result.rear).toBe(0);
-	expect(result.unclipped).toEqual([0, 0, 0]);
 	for (let i = 1; i < result.steps.length; i++)
 		expect(result.steps[i]!).toBeGreaterThan(result.steps[i - 1]!);
 });

@@ -15,7 +15,7 @@ Personal site at **slavshik.me**. Built with Vite, written in TypeScript, publis
 - `lab/look.html` — the Look Lab: orbit the television, tune shape, materials and light, copy the spec back out as JSON, export GLB or USDZ. Does not call `mount()` — no physics, no input, no broadcast.
 - `lab/og.html` — the source for `og.png` (1200×630). Regenerated with `make og`.
 - `public/` — `CNAME`, `robots.txt`, `sitemap.xml`, `favicon.svg`, `og.png`. Copied verbatim into the build. **`CNAME` leaving `public/` takes the domain down**, so treat that file as load-bearing.
-- `test/unit/` — Vitest over the physics and over the visit query string. `test/e2e/` — Playwright screenshots at three viewports, with baselines committed in `__screenshots__/`. `test/size.mjs` and `test/syntax.mjs` are the two checks over `dist/`: what it weighs, and whether it parses in the oldest browser we promise.
+- `test/unit/` — Vitest over the physics and over the visit query string. `test/e2e/` — Playwright: tests tagged `@shot` take screenshots at three viewports, with baselines committed in `__screenshots__/`; everything else runs once, in the `поведение` project, because nothing it checks depends on the width of the window. `test/size.mjs` and `test/syntax.mjs` are the two checks over `dist/`: what it weighs, and whether it parses in the oldest browser we promise.
 - `docs/adr/` — why this repo looks the way it does. Read before changing the build, the deployment or the module boundaries.
 
 ## Working here
