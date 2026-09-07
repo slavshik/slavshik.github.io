@@ -192,7 +192,7 @@ test('экран декодирует видео как sRGB и сохраняе
 	expect(result.frozenDifference).toBe(0);
 });
 
-test('сияние следует яркости, сохраняет полутона и скрыто корпусом', async ({ page }) => {
+test('ореол выключен: яркий экран не добавляет размытия и сохраняет полутона', async ({ page }) => {
 	await page.goto('/lab/tv.html');
 	await page.waitForSelector('#tv-stage canvas');
 	const result = await page.evaluate(() => {
@@ -296,7 +296,7 @@ test('сияние следует яркости, сохраняет полут�
 		return { black, whiteGlow, steps, rear, unclipped, interiorDelta, interiorPixels };
 	});
 	expect(result.black).toBe(0);
-	expect(result.whiteGlow).toBeGreaterThan(100);
+	expect(result.whiteGlow).toBe(0);
 	expect(result.interiorPixels).toBeGreaterThan(50);
 	expect(result.interiorDelta).toBeLessThanOrEqual(2);
 	expect(result.rear).toBe(0);

@@ -211,6 +211,12 @@ export function createBloom(renderer: THREE.WebGLRenderer, spec: ScreenEffectsSp
 		},
 
 		render(scene, camera) {
+			// A disabled halo renders directly, without blur or compositing passes.
+			if (current.tightStrength === 0 && current.broadStrength === 0) {
+				renderer.setRenderTarget(null);
+				renderer.render(scene, camera);
+				return;
+			}
 			const autoClear = renderer.autoClear;
 			const background = scene.background;
 			scene.background = null;
