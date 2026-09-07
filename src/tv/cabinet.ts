@@ -267,6 +267,54 @@ function woodTexture(spec: GrainSpec): { color: THREE.CanvasTexture; normal: THR
 	return { color: texture, normal };
 }
 
+/** Sparse repeatable scuffs, visible mainly where a highlight crosses them. */
+function plasticWear(spec: GrainSpec): {
+	color: THREE.CanvasTexture;
+	roughness: THREE.CanvasTexture;
+} {
+	const colorCanvas = document.createElement('canvas');
+	const roughCanvas = document.createElement('canvas');
+	colorCanvas.width = colorCanvas.height = roughCanvas.width = roughCanvas.height = spec.size;
+	const color = colorCanvas.getContext('2d')!,
+		rough = roughCanvas.getContext('2d')!;
+	color.fillStyle = '#eeeeee';
+	color.fillRect(0, 0, spec.size, spec.size);
+	rough.fillStyle = '#b0b0b0';
+	rough.fillRect(0, 0, spec.size, spec.size);
+	for (let i = 0; i < spec.wear.count; i++) {
+		const x = latticeHash(i, 0, 23) * spec.size,
+			y = latticeHash(i, 1, 23) * spec.size;
+		const angle = latticeHash(i, 2, 23) * Math.PI * 2;
+		const length = (0.2 + 0.8 * latticeHash(i, 3, 23)) * spec.wear.length * spec.size;
+		for (const ctx of [color, rough]) {
+			ctx.strokeStyle = `rgba(255,255,255,${spec.wear.strength})`;
+			ctx.lineWidth = spec.wear.width;
+			ctx.lineCap = 'round';
+			for (const ox of [-spec.size, 0, spec.size])
+				for (const oy of [-spec.size, 0, spec.size]) {
+					ctx.beginPath();
+					ctx.moveTo(x + ox, y + oy);
+					ctx.lineTo(
+						x + ox + Math.cos(angle) * length,
+						y + oy + Math.sin(angle) * length,
+					);
+					ctx.stroke();
+				}
+		}
+	}
+	const map = (canvas: HTMLCanvasElement, space: string): THREE.CanvasTexture => {
+		const tex = new THREE.CanvasTexture(canvas);
+		tex.colorSpace = space;
+		tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+		tex.anisotropy = 16;
+		return tex;
+	};
+	return {
+		color: map(colorCanvas, THREE.SRGBColorSpace),
+		roughness: map(roughCanvas, THREE.NoColorSpace),
+	};
+}
+
 export function buildMaterials(pal: Palette, spec: Record<BodyRole, MaterialSpec>): Materials {
 	const disposables: Disposable[] = [];
 	const roles = {} as Record<BodyRole, THREE.MeshPhysicalMaterial>;
@@ -341,6 +389,12 @@ export function buildCabinet(
 	} else if (grain.scale > 0) {
 		shell.normalMap = keep(grainTexture(grain));
 		shell.normalScale.setScalar(grain.scale);
+	}
+	if (grain.wood.strength === 0 && grain.wear.strength > 0) {
+		const wear = plasticWear(grain);
+		shell.map = keep(wear.color);
+		shell.roughnessMap = keep(wear.roughness);
+		shell.clearcoatRoughnessMap = wear.roughness;
 	}
 	tilt.add(new THREE.Mesh(shellGeo, shell));
 

@@ -124,6 +124,8 @@ export interface CordSpec {
  * выходит мутной. Резкие складки там, где точки равноудалены, и дают зерно.
  */
 export interface GrainSpec {
+	/** Fine surface scuffs on moulded plastic. */
+	wear: { strength: number; count: number; length: number; width: number };
 	/** Procedural veneer colour, beneath the smooth varnish. */
 	wood: { strength: number; light: string; dark: string; bands: number; warp: number };
 	/** Сторона плитки в текселях. */
@@ -267,23 +269,23 @@ export const LOOK: LookSpec = {
 	// Цвета материалов одинаковы в обеих темах: меняется свет, не пигмент.
 	materials: {
 		shell: {
-			color: '#ffffff',
-			roughness: 0.36,
+			color: '#b92330',
+			roughness: 0.46,
 			metalness: 0,
-			clearcoat: 0.38,
-			clearcoatRoughness: 0.2,
+			clearcoat: 0.18,
+			clearcoatRoughness: 0.34,
 			specularIntensity: 1,
-		}, // деревянный шпон под гладким лаком
+		}, // красный формованный пластик с мелкими следами использования
 		bezel: {
 			color: '#e8dbc0',
-			roughness: 0.32,
+			roughness: 0.38,
 			metalness: 0,
-			clearcoat: 0,
+			clearcoat: 0.12,
 			clearcoatRoughness: 0.3,
 			specularIntensity: 1,
-		}, // сатиновый пластик цвета слоновой кости
+		}, // светлая сатиновая рамка
 		knob: {
-			color: '#242320',
+			color: '#222326',
 			roughness: 0.42,
 			metalness: 0,
 			clearcoat: 0,
@@ -335,12 +337,13 @@ export const LOOK: LookSpec = {
 	// намёк; это осознанно, вернуть его там можно только загрубив зерно
 	// везде.
 	grain: {
-		wood: { strength: 1, light: '#936b48', dark: '#4a3120', bands: 60, warp: 2.4 },
+		wear: { strength: 0.55, count: 48, length: 0.12, width: 0.8 },
+		wood: { strength: 0, light: '#936b48', dark: '#4a3120', bands: 60, warp: 2.4 },
 		size: 512,
 		cells: 56,
 		relief: 1.2,
 		repeat: 2,
-		scale: 0.399,
+		scale: 0.039,
 	},
 	// Оплётка: чёрная нить в жёлтую крапину, как у довоенного шнура.
 	//
