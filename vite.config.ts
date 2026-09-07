@@ -147,7 +147,7 @@ export default defineConfig({
 				// платит вторым запросом, а test/size.mjs меряет огрызок. Сюда
 				// собирается ядро three и весь src/tv/, кроме lab.ts: пульт стенда
 				// физики в посетительский кусок не ездит. Аддоны three не названы
-				// нарочно: RoundedBoxGeometry нужен только корпусу и сам ложится в
+				// нарочно: RoundedBoxGeometry нужен корпусу с вилкой и сам ложится в
 				// tv, а OrbitControls и экспортёры — только стендам.
 				advancedChunks: {
 					groups: [

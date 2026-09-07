@@ -6,6 +6,7 @@
  */
 
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
 import { buildCabinet, buildMaterials, type AntennaPart, type Disposable } from './cabinet.js';
 import { BODY_D, BODY_H, BODY_W, FOOT_H, ROPE_N, ROPE_R, ROPE_RAD, ROPE_Z } from './constants.js';
@@ -213,31 +214,6 @@ export function braidTexture(spec: CordSpec): THREE.CanvasTexture {
 	return tex;
 }
 
-/** Точка на ребре from→to, отступив от from на r (но не дальше середины). */
-function alongEdge(from: [number, number], to: [number, number], r: number): [number, number] {
-	const dx = to[0] - from[0];
-	const dy = to[1] - from[1];
-	const len = Math.hypot(dx, dy) || 1;
-	const k = Math.min(r, len / 2) / len;
-	return [from[0] + dx * k, from[1] + dy * k];
-}
-
-/** Многоугольник со скруглёнными углами: угол становится квадратичной кривой. */
-function roundedPoly(pts: [number, number][], r: number): THREE.Shape {
-	const shape = new THREE.Shape();
-	const n = pts.length;
-	for (let i = 0; i < n; i++) {
-		const cur = pts[i]!;
-		const a = alongEdge(cur, pts[(i - 1 + n) % n]!, r);
-		const b = alongEdge(cur, pts[(i + 1) % n]!, r);
-		if (i === 0) shape.moveTo(a[0], a[1]);
-		else shape.lineTo(a[0], a[1]);
-		shape.quadraticCurveTo(cur[0], cur[1], b[0], b[1]);
-	}
-	shape.closePath();
-	return shape;
-}
-
 export function shadowTexture(): THREE.CanvasTexture {
 	const c = document.createElement('canvas');
 	c.width = c.height = 128;
@@ -275,30 +251,37 @@ export function buildTV(pal: Palette): TvParts {
      лопатка, — как на настоящей. */
 	const plug = new THREE.Group();
 
-	// Лопатка: скруглённая трапеция, выдавленная по Z с фаской. У тарелки она
-	// почти во всю её ширину, к проводу сужается вдвое с лишним.
-	const bodyShape = roundedPoly(
-		[
-			[-0.072, -0.108],
-			[0.072, -0.108],
-			[0.032, 0.058],
-			[-0.032, 0.058],
-		],
-		0.026,
-	);
+	/* Лопатка: скруглённая трапеция, плоская по Z. У тарелки она почти во всю
+	   её ширину, к проводу сужается вдвое с лишним.
+
+	   Собрана из скруглённой коробки, которую и без того строит корпус, а не
+	   выдавливанием контура: ExtrudeGeometry тащит за собой Shape, Path и
+	   всю кривую арифметику three — 4.7 KiB после сжатия, три процента куска,
+	   ради одной детали размером в тридцать пикселей. Коробка уже оплачена.
+
+	   Сужение — тем же приёмом, что у корпуса: X умножается на долю, взятую
+	   по высоте. Коробка при этом строится глубже, чем нужно, и сжимается по
+	   Z: так скругление остаётся крупным в плоскости лопатки (это силуэт) и
+	   становится узкой фаской по толщине (это блик). */
+	const BLADE_W = 0.144;
+	const BLADE_H = 0.166;
+	const BLADE_R = 0.026;
+	const BLADE_SQUASH = 0.75;
 	const bodyGeo = keep(
-		new THREE.ExtrudeGeometry(bodyShape, {
-			depth: 0.05,
-			bevelEnabled: true,
-			bevelSize: 0.014,
-			bevelThickness: 0.014,
-			bevelSegments: 4,
-			curveSegments: 12,
-		}),
+		new RoundedBoxGeometry(BLADE_W, BLADE_H, 0.078 / BLADE_SQUASH, 4, BLADE_R),
 	);
-	// Выдавливание идёт от нуля вперёд, а вилке нужно стоять серединой в
-	// плоскости провода: иначе она висит сбоку от него.
-	bodyGeo.translate(0, 0, -0.025);
+	{
+		const pos = bodyGeo.attributes.position!;
+		for (let i = 0; i < pos.count; i++) {
+			const t = (pos.getY(i) + BLADE_H / 2) / BLADE_H;
+			pos.setX(i, pos.getX(i) * (1 - 0.556 * t));
+		}
+		pos.needsUpdate = true;
+		bodyGeo.scale(1, 1, BLADE_SQUASH);
+		bodyGeo.computeVertexNormals();
+	}
+	// Коробка строится вокруг нуля, а лопатке нужно висеть под тарелкой.
+	bodyGeo.translate(0, -0.025, 0);
 	plug.add(new THREE.Mesh(bodyGeo, matPlug));
 
 	// Круглое основание: тонкая тарелка чуть шире лопатки — из неё штыри
